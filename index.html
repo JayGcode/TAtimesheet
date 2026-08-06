@@ -771,6 +771,7 @@
         name: identity.name,
         building: r.building || null
       }));
+      list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // 최신순 (평소 저장 방식과 동일)
       // 서버 기록으로 이 달의 로컬 기록을 통째로 교체합니다(서버가 항상 정답).
       try{
         localStorage.setItem(localHistoryStorageKey(monthStr), JSON.stringify(list));
