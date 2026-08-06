@@ -228,6 +228,10 @@
 
     <label for="localHistoryMonth">조회할 월</label>
     <select id="localHistoryMonth"></select>
+    <div class="btn-row" style="margin-top:8px;">
+      <button id="syncHistoryBtn" type="button" class="btn btn-ghost">서버에서 다시 불러오기</button>
+    </div>
+    <p id="syncHistoryMsg" class="status" aria-live="polite"></p>
 
     <div class="building-list" id="localHistoryList" style="margin-top:10px;"></div>
     <p id="localHistoryEmpty" class="hint" style="margin-top:8px;"></p>
@@ -698,6 +702,7 @@
       empId: identity.empId,
       otp,
       displayTime: formatFullDateTime(timestamp),
+      timestampIso: timestamp,
       lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy,
       altitude: coords.altitude, speed: coords.speed, heading: coords.heading,
       ip: ip || '',
@@ -721,6 +726,57 @@
   $('checkinBtn').addEventListener('click', () => record('출근'));
   $('checkoutBtn').addEventListener('click', () => record('퇴근'));
   $('localHistoryMonth').addEventListener('change', () => renderLocalHistory());
+
+  $('syncHistoryBtn').addEventListener('click', async () => {
+    const identity = getStoredIdentity();
+    const msg = $('syncHistoryMsg');
+    if(!identity){
+      msg.textContent = '먼저 기기 등록을 완료해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
+    if(!hasWebCrypto()){
+      msg.textContent = '이 브라우저는 본인 확인 기능(Web Crypto)을 지원하지 않습니다.';
+      msg.className = 'status err';
+      return;
+    }
+    const monthStr = $('localHistoryMonth').value || monthKey();
+    const btn = $('syncHistoryBtn');
+    btn.disabled = true;
+    msg.textContent = '서버에서 불러오는 중…';
+    msg.className = 'status';
+
+    try{
+      const otp = await generateOtp(identity.secretHex);
+      const res = await callAppsScript({ action: 'sync', empId: identity.empId, otp, month: monthStr });
+      if(!res.ok){
+        msg.textContent = res.error || '불러오기에 실패했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      const list = (res.records || []).map(r => ({
+        id: uid(),
+        timestamp: r.timestamp,
+        type: r.type,
+        name: identity.name,
+        building: r.building || null
+      }));
+      // 서버 기록으로 이 달의 로컬 기록을 통째로 교체합니다(서버가 항상 정답).
+      try{
+        localStorage.setItem(localHistoryStorageKey(monthStr), JSON.stringify(list));
+      }catch(e){
+        console.error('로컬 저장 오류:', e);
+        msg.textContent = '서버에서는 불러왔지만, 이 기기에 저장하지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = list.length + '건을 서버에서 불러왔습니다.';
+      msg.className = 'status ok';
+      renderLocalHistory();
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ---------- init ----------
   (async function init(){
