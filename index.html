@@ -754,7 +754,10 @@
         msg.className = 'status err';
         return;
       }
-      const list = (res.records || []).map(r => ({
+      const rawRecords = res.records || [];
+      const validRecords = rawRecords.filter(r => r.timestamp && !isNaN(new Date(r.timestamp).getTime()));
+      const skipped = rawRecords.length - validRecords.length;
+      const list = validRecords.map(r => ({
         id: uid(),
         timestamp: r.timestamp,
         type: r.type,
@@ -770,7 +773,8 @@
         msg.className = 'status err';
         return;
       }
-      msg.textContent = list.length + '건을 서버에서 불러왔습니다.';
+      msg.textContent = list.length + '건을 서버에서 불러왔습니다.' +
+        (skipped > 0 ? ' (시간 정보가 없는 오래된 기록 ' + skipped + '건은 제외됨)' : '');
       msg.className = 'status ok';
       renderLocalHistory();
     } finally {
