@@ -591,6 +591,13 @@
     return typeof crypto !== 'undefined' && !!crypto.subtle && typeof crypto.subtle.importKey === 'function';
   }
 
+  function isKakaoInApp(){
+    return /KAKAOTALK/i.test(navigator.userAgent || '');
+  }
+  function isAndroidDevice(){
+    return /Android/i.test(navigator.userAgent || '');
+  }
+
   function refreshIdentityUI(){
     const identity = getStoredIdentity();
     if(identity){
@@ -784,6 +791,12 @@
 
   // ---------- init ----------
   (async function init(){
+    // 카카오톡 인앱 브라우저는 저장공간이 불안정해 등록 정보가 자꾸 사라지는 원인이 될 수 있습니다.
+    // 안드로이드는 기본 브라우저로 자동 이동을 시도하고, 그 외에는 수동으로 빠져나가는 방법을 안내합니다.
+    if(isKakaoInApp() && isAndroidDevice()){
+      location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
+    }
+
     $('buildingList').innerHTML = CAMPUS_BUILDINGS.map(b =>
       '<span>' + b.name + '</span>'
     ).join('');
@@ -795,6 +808,13 @@
     const banner = $('envBanner');
     const warnings = [];
 
+    if(isKakaoInApp()){
+      warnings.push(
+        '카카오톡 안에서 열려 있습니다. 이 상태에서는 등록 정보가 저장되지 않거나 갑자기 사라질 수 있습니다. ' +
+        '화면 우측 상단의 <b>"⋮" 또는 "•••" 메뉴</b>(또는 상단 주소 표시줄)를 눌러 <b>"다른 브라우저로 열기"</b>를 선택한 뒤, ' +
+        '기본 브라우저(Safari, Chrome 등)에서 다시 열어 주세요.'
+      );
+    }
     if(location.protocol === 'file:'){
       warnings.push(
         '이 파일이 file:// 로 열려 있습니다(폴더에서 더블클릭). 이 상태에서는 대부분의 브라우저가 위치(GPS) 접근을 ' +
