@@ -288,8 +288,8 @@
         if(done) return;
         done = true;
         cleanup();
-        resolve({ ok: false, error: '서버 응답이 20초 안에 도착하지 않았습니다. 다시 시도해 주세요.' });
-      }, 20000);
+        resolve({ ok: false, error: '서버 응답이 35초 안에 도착하지 않았습니다. 잠시 후 다시 눌러 주세요. 만약 방금 시도가 이미 처리된 것이었다면 "이미 기록이 있습니다"라는 메시지가 뜨는데, 그러면 정상적으로 처리된 것이니 안심하셔도 됩니다.' });
+      }, 35000);
 
       script.src = APPS_SCRIPT_URL + '?' + params.toString();
       document.head.appendChild(script);
