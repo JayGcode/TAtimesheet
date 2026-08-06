@@ -201,6 +201,18 @@
           <button id="checkinBtn" class="btn btn-checkin">출근 기록</button>
           <button id="checkoutBtn" class="btn btn-checkout">퇴근 기록</button>
         </div>
+
+        <div class="building-list" id="todayStatusDisplay" style="margin-top:10px;">
+          <div class="building-row">
+            <span><span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:0.7rem;font-weight:600;margin-right:6px;background:var(--mint-soft);color:var(--mint-dark);">출근</span>오늘</span>
+            <span id="todayCheckinTime" style="font-family:'JetBrains Mono', monospace;">-</span>
+          </div>
+          <div class="building-row">
+            <span><span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:0.7rem;font-weight:600;margin-right:6px;background:var(--sky-soft);color:var(--sky-dark);">퇴근</span>오늘</span>
+            <span id="todayCheckoutTime" style="font-family:'JetBrains Mono', monospace;">-</span>
+          </div>
+        </div>
+
         <p class="hint" style="margin-top:8px;">※ 장학조교는 복무 확인을 위해 출근기록만 가능합니다.</p>
 
         <p id="statusMsg" class="status" aria-live="polite"></p>
@@ -623,6 +635,8 @@
       if(!res.ok) return;
       todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
       updateCheckinButtons();
+      $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
+      $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
     }catch(e){
       console.error('오늘 상태 확인 오류:', e);
     }
@@ -751,6 +765,11 @@
     renderLocalHistory();
     todayCheckedIn = (type === '출근'); // 출근 성공 시 근무중 상태로, 퇴근 성공 시 다시 기본 상태로
     updateCheckinButtons();
+    if(type === '출근'){
+      $('todayCheckinTime').textContent = formatTime(timestamp);
+    }else{
+      $('todayCheckoutTime').textContent = formatTime(timestamp);
+    }
   }
 
   $('checkinBtn').addEventListener('click', () => record('출근'));
