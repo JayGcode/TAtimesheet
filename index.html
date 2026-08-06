@@ -664,24 +664,40 @@
     if(!hasWebCrypto()) return;
     $('todayCheckinTime').textContent = '확인 중…';
     $('todayCheckoutTime').textContent = '확인 중…';
-    try{
-      const otp = await generateOtp(identity.secretHex);
-      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
-      const res = await callAppsScript({ action: 'todayStatus', empId: identity.empId, otp, date: dateStr });
-      if(!res.ok){
-        $('todayCheckinTime').textContent = '확인 실패';
-        $('todayCheckoutTime').textContent = '확인 실패';
-        return;
+
+    const MAX_ATTEMPTS = 3;
+    let lastError = '';
+
+    for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+      try{
+        const otp = await generateOtp(identity.secretHex); // 재시도마다 새로 생성(만료 걱정 없음)
+        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+        const res = await callAppsScript({ action: 'todayStatus', empId: identity.empId, otp, date: dateStr });
+
+        if(res.ok){
+          todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
+          updateCheckinButtons();
+          $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
+          $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
+          return; // 성공했으니 종료
+        }
+        lastError = res.error || '알 수 없는 오류';
+      }catch(e){
+        console.error('오늘 상태 확인 오류(시도 ' + attempt + '):', e);
+        lastError = e.message || String(e);
       }
-      todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
-      updateCheckinButtons();
-      $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
-      $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
-    }catch(e){
-      console.error('오늘 상태 확인 오류:', e);
-      $('todayCheckinTime').textContent = '확인 실패';
-      $('todayCheckoutTime').textContent = '확인 실패';
+
+      if(attempt < MAX_ATTEMPTS){
+        $('todayCheckinTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
+        $('todayCheckoutTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
+        await new Promise(r => setTimeout(r, 1500));
+      }
     }
+
+    // 여기까지 왔다면 재시도를 다 써도 실패한 것입니다.
+    $('todayCheckinTime').textContent = '확인 실패';
+    $('todayCheckoutTime').textContent = '확인 실패';
+    console.error('오늘 상태 확인 최종 실패:', lastError);
   }
 
   let leafletMap = null, userMarker = null, userAccuracyCircle = null;
