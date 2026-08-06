@@ -628,17 +628,25 @@
   // 조회에 실패해도 기본 상태(출근 버튼)로 남을 뿐이며, 실제 체크인 시도는 서버가 다시 정확히 판정하므로 안전합니다.
   async function syncTodayStatus(identity){
     if(!hasWebCrypto()) return;
+    $('todayCheckinTime').textContent = '확인 중…';
+    $('todayCheckoutTime').textContent = '확인 중…';
     try{
       const otp = await generateOtp(identity.secretHex);
       const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
       const res = await callAppsScript({ action: 'todayStatus', empId: identity.empId, otp, date: dateStr });
-      if(!res.ok) return;
+      if(!res.ok){
+        $('todayCheckinTime').textContent = '확인 실패';
+        $('todayCheckoutTime').textContent = '확인 실패';
+        return;
+      }
       todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
       updateCheckinButtons();
       $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
       $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
     }catch(e){
       console.error('오늘 상태 확인 오류:', e);
+      $('todayCheckinTime').textContent = '확인 실패';
+      $('todayCheckoutTime').textContent = '확인 실패';
     }
   }
 
