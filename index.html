@@ -6,6 +6,8 @@
 <title>조교 출근부</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root{
     --bg: #F4FAFA;
@@ -214,6 +216,9 @@
         </div>
 
         <p class="hint" style="margin-top:8px;">※ 장학조교는 복무 확인을 위해 출근기록만 가능합니다.</p>
+
+        <p id="mapStatusMsg" class="hint" style="margin-top:10px;"></p>
+        <div id="mapContainer" style="height:260px; border-radius:8px; overflow:hidden; margin-top:6px; border:1px solid var(--line); display:none;"></div>
 
         <p id="statusMsg" class="status" aria-live="polite"></p>
         <div id="stampZone" class="stamp-zone" aria-hidden="true"></div>
@@ -650,6 +655,60 @@
     }
   }
 
+  let leafletMap = null, userMarker = null, userAccuracyCircle = null;
+
+  function initCampusMarkersOnMap(){
+    CAMPUS_BUILDINGS.forEach(b => {
+      L.marker([b.lat, b.lng], { title: b.name, opacity: 0.75 })
+        .addTo(leafletMap)
+        .bindPopup(b.name);
+    });
+  }
+
+  function updateUserLocationOnMap(coords){
+    if(typeof L === 'undefined') return; // 지도 라이브러리 로드 실패 시 조용히 무시
+    const latlng = [coords.latitude, coords.longitude];
+
+    if(!leafletMap){
+      leafletMap = L.map('mapContainer').setView(latlng, 16);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(leafletMap);
+      initCampusMarkersOnMap();
+    }
+
+    if(userMarker){
+      userMarker.setLatLng(latlng);
+    }else{
+      userMarker = L.marker(latlng, { title: '내 위치' }).addTo(leafletMap).bindPopup('내 위치').openPopup();
+    }
+    if(userAccuracyCircle){
+      userAccuracyCircle.setLatLng(latlng);
+      userAccuracyCircle.setRadius(coords.accuracy || 0);
+    }else{
+      userAccuracyCircle = L.circle(latlng, { radius: coords.accuracy || 0, color: '#4A80B8', fillOpacity: 0.15 }).addTo(leafletMap);
+    }
+    leafletMap.setView(latlng, leafletMap.getZoom());
+    $('mapContainer').style.display = 'block';
+    // 지도가 display:none 상태에서 초기화되면 크기 계산이 어긋날 수 있어 보정합니다.
+    setTimeout(() => leafletMap.invalidateSize(), 100);
+  }
+
+  async function loadMyLocationMap(){
+    const mapMsg = $('mapStatusMsg');
+    mapMsg.textContent = '지도에 내 위치를 표시하는 중…';
+    mapMsg.className = 'hint';
+    try{
+      const coords = await getLocation();
+      updateUserLocationOnMap(coords);
+      mapMsg.textContent = '';
+    }catch(e){
+      mapMsg.textContent = '지도에 위치를 표시하지 못했습니다: ' + e.message;
+      mapMsg.className = 'status err';
+    }
+  }
+
   function refreshIdentityUI(){
     const identity = getStoredIdentity();
     if(identity){
@@ -659,6 +718,7 @@
       todayCheckedIn = false; // 서버 응답이 오기 전까지의 기본 상태(출근 버튼)
       updateCheckinButtons();
       syncTodayStatus(identity); // 실제 서버 상태로 비동기 갱신
+      loadMyLocationMap(); // 지도에 현재 위치 표시
     }else{
       registerPanel.style.display = 'block';
       checkinPanel.style.display = 'none';
@@ -778,6 +838,7 @@
     }else{
       $('todayCheckoutTime').textContent = formatTime(timestamp);
     }
+    updateUserLocationOnMap(coords); // 이미 확보한 좌표를 그대로 재사용 (GPS 재요청 없음)
   }
 
   $('checkinBtn').addEventListener('click', () => record('출근'));
