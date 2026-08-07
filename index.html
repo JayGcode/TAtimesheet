@@ -167,6 +167,7 @@
   .admin-cal td.status-정상{ background: var(--mint-soft); }
   .admin-cal td.status-퇴근누락{ background: var(--danger-soft); }
   .admin-cal td.status-결근{ background: #FADBD8; }
+  .admin-cal td.status-지각{ background: #FDEBD0; }
   .admin-cal td.status-휴가{ background: var(--sky-soft); }
   .admin-cal td.status-휴무{ background: var(--bg); color: var(--ink-soft); }
   .admin-cal .sun{ color: #C0392B; }
@@ -296,9 +297,10 @@
 
     <section class="card" id="adminMenuPanel" style="display:none;">
       <h2>관리자 메뉴</h2>
-      <div class="btn-row" style="flex-wrap:wrap;">
-        <button id="adminMenuAttendanceBtn" type="button" class="btn btn-checkin">조교 출퇴근 현황 확인</button>
-        <button id="adminMenuLeaveBtn" type="button" class="btn btn-checkout">조교 연차, 휴무 반영</button>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button id="adminMenuAttendanceBtn" type="button" class="btn btn-checkin" style="width:100%;">조교 출퇴근 현황 확인</button>
+        <button id="adminMenuLeaveBtn" type="button" class="btn btn-checkout" style="width:100%;">조교 연차, 휴무 반영</button>
+        <button id="adminMenuScheduleBtn" type="button" class="btn btn-primary" style="width:100%;">근무시간 설정</button>
       </div>
       <div class="btn-row" style="margin-top:10px;">
         <button id="adminBackBtn2" type="button" class="btn btn-ghost">조교 화면으로</button>
@@ -322,6 +324,39 @@
         <select id="adminLeaveMonth"></select>
         <p id="adminLeaveMsg" class="status" aria-live="polite"></p>
         <div id="adminAbsenceList" style="margin-top:10px;"></div>
+      </div>
+
+      <div id="adminScheduleView" style="display:none; margin-top:18px;">
+        <h3>근무시간 설정</h3>
+        <p class="hint">행정조교(일반조교) 기준 근무 시작 시간입니다. 이 시간 이후 출근하면 "지각"으로 표시됩니다. 장학조교·관리자는 지각 판정 대상이 아닙니다.</p>
+
+        <label for="scheduleDefaultTime">기본 근무시작 시간</label>
+        <input id="scheduleDefaultTime" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 1</b> (예: 여름방학)</p>
+        <label for="schedulePeriod1Label">설명</label>
+        <input id="schedulePeriod1Label" type="text" placeholder="예: 여름방학 단축근무">
+        <label for="schedulePeriod1Start">시작일</label>
+        <input id="schedulePeriod1Start" type="date">
+        <label for="schedulePeriod1End">종료일</label>
+        <input id="schedulePeriod1End" type="date">
+        <label for="schedulePeriod1Time">이 기간의 근무시작 시간</label>
+        <input id="schedulePeriod1Time" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 2</b> (예: 겨울방학)</p>
+        <label for="schedulePeriod2Label">설명</label>
+        <input id="schedulePeriod2Label" type="text" placeholder="예: 겨울방학 단축근무">
+        <label for="schedulePeriod2Start">시작일</label>
+        <input id="schedulePeriod2Start" type="date">
+        <label for="schedulePeriod2End">종료일</label>
+        <input id="schedulePeriod2End" type="date">
+        <label for="schedulePeriod2Time">이 기간의 근무시작 시간</label>
+        <input id="schedulePeriod2Time" type="time">
+
+        <div class="btn-row" style="margin-top:14px;">
+          <button id="saveScheduleBtn" type="button" class="btn btn-primary">저장</button>
+        </div>
+        <p id="adminScheduleMsg" class="status" aria-live="polite"></p>
       </div>
     </section>
   </div>
@@ -935,6 +970,7 @@
     $('adminMenuPanel').style.display = 'block';
     $('adminAttendanceView').style.display = 'none';
     $('adminLeaveView').style.display = 'none';
+    $('adminScheduleView').style.display = 'none';
   }
 
   $('adminMenuOpenBtn').addEventListener('click', async () => {
@@ -1005,12 +1041,20 @@
   $('adminMenuAttendanceBtn').addEventListener('click', () => {
     $('adminAttendanceView').style.display = 'block';
     $('adminLeaveView').style.display = 'none';
+    $('adminScheduleView').style.display = 'none';
     loadAdminAttendance();
   });
   $('adminMenuLeaveBtn').addEventListener('click', () => {
     $('adminLeaveView').style.display = 'block';
     $('adminAttendanceView').style.display = 'none';
+    $('adminScheduleView').style.display = 'none';
     loadAdminAbsences();
+  });
+  $('adminMenuScheduleBtn').addEventListener('click', () => {
+    $('adminScheduleView').style.display = 'block';
+    $('adminAttendanceView').style.display = 'none';
+    $('adminLeaveView').style.display = 'none';
+    loadAdminSchedule();
   });
   $('adminAttPerson').addEventListener('change', loadAdminAttendance);
   $('adminAttMonth').addEventListener('change', loadAdminAttendance);
@@ -1060,10 +1104,11 @@
       if(col === 7){ html += '</tr><tr>'; col = 0; }
       const dowClass = d.dow===0?'sun':d.dow===6?'sat':'';
       let inner = '<div class="daynum ' + dowClass + '">' + d.day + '</div>';
-      if(d.status === '정상' || d.status === '퇴근누락'){
+      if(d.status === '정상' || d.status === '퇴근누락' || d.status === '지각'){
         if(d.checkin) inner += '<div>출 ' + formatTime(d.checkin) + '</div>';
         if(d.checkout) inner += '<div>퇴 ' + formatTime(d.checkout) + '</div>';
         if(d.status === '퇴근누락') inner += '<div>⚠퇴근누락</div>';
+        if(d.status === '지각') inner += '<div>⏰지각</div>';
       } else if(d.status){
         inner += '<div>' + d.status + '</div>';
       }
@@ -1146,6 +1191,63 @@
       msg.className = 'status err';
     }
   }
+
+  async function loadAdminSchedule(){
+    const msg = $('adminScheduleMsg');
+    msg.textContent = '불러오는 중…';
+    msg.className = 'status';
+    try{
+      const res = await adminCall('adminGetWorkSchedule');
+      if(!res.ok){
+        msg.textContent = res.error || '불러오지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '';
+      const s = res.schedule;
+      $('scheduleDefaultTime').value = s.defaultTime || '';
+      $('schedulePeriod1Label').value = s.period1.label || '';
+      $('schedulePeriod1Start').value = s.period1.start || '';
+      $('schedulePeriod1End').value = s.period1.end || '';
+      $('schedulePeriod1Time').value = s.period1.time || '';
+      $('schedulePeriod2Label').value = s.period2.label || '';
+      $('schedulePeriod2Start').value = s.period2.start || '';
+      $('schedulePeriod2End').value = s.period2.end || '';
+      $('schedulePeriod2Time').value = s.period2.time || '';
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
+
+  $('saveScheduleBtn').addEventListener('click', async () => {
+    const msg = $('adminScheduleMsg');
+    msg.textContent = '저장하는 중…';
+    msg.className = 'status';
+    try{
+      const res = await adminCall('adminSaveWorkSchedule', {
+        defaultTime: $('scheduleDefaultTime').value,
+        period1Label: $('schedulePeriod1Label').value,
+        period1Start: $('schedulePeriod1Start').value,
+        period1End: $('schedulePeriod1End').value,
+        period1Time: $('schedulePeriod1Time').value,
+        period2Label: $('schedulePeriod2Label').value,
+        period2Start: $('schedulePeriod2Start').value,
+        period2End: $('schedulePeriod2End').value,
+        period2Time: $('schedulePeriod2Time').value
+      });
+      if(!res.ok){
+        msg.textContent = res.error || '저장하지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '저장되었습니다.';
+      msg.className = 'status ok';
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  });
 
   // ---------- init ----------
   (async function init(){
