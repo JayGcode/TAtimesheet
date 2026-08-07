@@ -245,6 +245,9 @@
 
     <label for="localHistoryMonth">조회할 월</label>
     <select id="localHistoryMonth"></select>
+    <div class="btn-row" style="margin-top:8px;">
+      <button id="syncHistoryBtn" type="button" class="btn btn-ghost">동기화(불러오기)</button>
+    </div>
     <p id="historyMsg" class="status" aria-live="polite"></p>
 
     <div class="building-list" id="localHistoryList" style="margin-top:10px;"></div>
@@ -824,6 +827,23 @@
   $('checkinBtn').addEventListener('click', () => record('출근'));
   $('checkoutBtn').addEventListener('click', () => record('퇴근'));
   $('localHistoryMonth').addEventListener('change', () => renderCheckinHistory()); // 이미 받아온 데이터를 다시 필터링만 함(서버 재호출 없음)
+
+  $('syncHistoryBtn').addEventListener('click', async () => {
+    const identity = getStoredIdentity();
+    if(!identity){
+      const msg = $('historyMsg');
+      msg.textContent = '먼저 기기 등록을 완료해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
+    const btn = $('syncHistoryBtn');
+    btn.disabled = true;
+    try{
+      await loadHistory(identity); // 서버에서 다시 불러와 오늘현황·퇴근누락·체크인기록을 함께 갱신
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
   // ---------- init ----------
   (async function init(){
