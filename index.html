@@ -949,6 +949,14 @@
 
     const res = await adminCall('adminListPeople');
     if(!res.ok){
+      // 서버가 "이 기기에 등록된 키가 없다"고 답하면(등록 시트에서 secretHex가 비어있는 경우 등),
+      // 여기서 막다른 화면으로 끝내지 않고 재등록할 수 있도록 자동으로 등록 화면으로 안내합니다.
+      if((res.error || '').indexOf('등록된 키가 없습니다') !== -1){
+        clearStoredIdentityAndGoRegister(
+          '이 기기의 등록 정보가 서버와 일치하지 않습니다. 아래에서 다시 등록해 주세요.'
+        );
+        return;
+      }
       msg.textContent = res.error || '관리자 권한이 없습니다.';
       msg.className = 'status err';
       return;
@@ -959,6 +967,16 @@
     populateAdminMonthSelects();
     showAdminMenu();
   });
+
+  function clearStoredIdentityAndGoRegister(message){
+    try{ localStorage.removeItem(IDENTITY_KEY); }catch(e){}
+    showTaScreen();
+    refreshIdentityUI(); // 저장된 신원이 없으니 자동으로 등록 화면(registerPanel)이 표시됩니다.
+    if(message){
+      registerMsg.textContent = message;
+      registerMsg.className = 'status err';
+    }
+  }
 
   $('adminBackBtn1').addEventListener('click', () => { showTaScreen(); });
   $('adminBackBtn2').addEventListener('click', () => { showTaScreen(); });
