@@ -240,15 +240,12 @@
   </main>
 
   <section class="card local-history-card">
-    <h3>이 기기의 체크인 기록</h3>
-    <p class="hint">이 폰(브라우저)에만 저장되는 개인용 기록이며, 월 단위로 최대 3개월까지 보관됩니다. 다른 기기와 자동으로 공유되지는 않지만, 아래 "서버에서 다시 불러오기"로 언제든 다시 채울 수 있습니다.</p>
+    <h3>내 체크인 기록</h3>
+    <p class="hint">항상 서버(구글 시트)에서 최신 기록을 가져와 보여드립니다. 출근·퇴근할 때마다, 그리고 이 화면을 열 때마다 자동으로 새로고침됩니다.</p>
 
     <label for="localHistoryMonth">조회할 월</label>
     <select id="localHistoryMonth"></select>
-    <div class="btn-row" style="margin-top:8px;">
-      <button id="syncHistoryBtn" type="button" class="btn btn-ghost">서버에서 다시 불러오기</button>
-    </div>
-    <p id="syncHistoryMsg" class="status" aria-live="polite"></p>
+    <p id="historyMsg" class="status" aria-live="polite"></p>
 
     <div class="building-list" id="localHistoryList" style="margin-top:10px;"></div>
     <p id="localHistoryEmpty" class="hint" style="margin-top:8px;"></p>
@@ -417,25 +414,10 @@
       hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true
     });
   }
-  function uid(){
-    return (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2));
-  }
   function escapeHtml(s){
     return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // ---------- 이 PC 전용 로컬 체크인 기록 (localStorage, 월 단위 저장) ----------
-  // 서버/구글 시트와 무관하게, 이 브라우저에만 남는 개인용 기록입니다.
-  // Claude.ai 미리보기 안에서는 localStorage가 지원되지 않아 이 기능이 비활성화되며,
-  // 실제로 다운로드해 호스팅한 뒤(HTTPS)부터 정상 작동합니다.
-  function hasLocalStorage(){
-    try{
-      const k = '__test__';
-      localStorage.setItem(k, '1');
-      localStorage.removeItem(k);
-      return true;
-    }catch(e){ return false; }
-  }
   function monthKey(d = new Date()){
     return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit' }).format(d);
   }
@@ -448,46 +430,10 @@
     const [y, m] = monthStr.split('-').map(Number);
     return y + '년 ' + m + '월';
   }
-  function localHistoryStorageKey(monthStr){
-    return 'jokyo_checkin_history:' + monthStr;
-  }
-  const LOCAL_HISTORY_PREFIX = 'jokyo_checkin_history:';
-  // "YYYY-MM" 형식은 문자열 비교만으로도 날짜 순서가 그대로 유지되므로 별도 파싱 없이 비교합니다.
-  function cleanupOldLocalHistory(){
-    if(!hasLocalStorage()) return;
-    try{
-      const cutoff = shiftMonth(monthKey(), -3); // 3개월 전 달. 이 달 및 그 이전 기록은 삭제 대상.
-      const toRemove = [];
-      for(let i = 0; i < localStorage.length; i++){
-        const key = localStorage.key(i);
-        if(key && key.indexOf(LOCAL_HISTORY_PREFIX) === 0){
-          const m = key.slice(LOCAL_HISTORY_PREFIX.length);
-          if(m <= cutoff) toRemove.push(key);
-        }
-      }
-      toRemove.forEach(k => localStorage.removeItem(k));
-    }catch(e){ console.error('오래된 로컬 기록 정리 오류:', e); }
-  }
   function formatDayTime(iso){
     return new Date(iso).toLocaleString('ko-KR', {
       timeZone:'Asia/Seoul', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true
     });
-  }
-  function saveLocalHistory(entry){
-    if(!hasLocalStorage()) return;
-    try{
-      const storageKey = localHistoryStorageKey(monthKey(new Date(entry.timestamp)));
-      const raw = localStorage.getItem(storageKey);
-      let list = raw ? JSON.parse(raw) : [];
-      list.unshift({
-        id: uid(),
-        timestamp: entry.timestamp,
-        type: entry.type || '출근',
-        name: entry.name,
-        building: entry.nearestBuilding || entry.ipBuilding || null
-      });
-      localStorage.setItem(storageKey, JSON.stringify(list));
-    }catch(e){ console.error('로컬 기록 저장 오류:', e); }
   }
   function populateMonthSelect(){
     const sel = $('localHistoryMonth');
@@ -500,57 +446,91 @@
       '<option value="' + m2 + '">' + monthLabel(m2) + '</option>';
     sel.value = current;
   }
-  function renderLocalHistory(){
+
+  // 서버에서 받아온 최근 기록(최대 약 3개월치)을 세션 동안만 메모리에 들고 있습니다.
+  // 폰에 별도로 저장하지 않으며, 새로고침하거나 체크인할 때마다 서버에서 다시 받아옵니다.
+  let historyRecords = [];
+
+  function renderCheckinHistory(){
     const wrap = $('localHistoryList');
     const empty = $('localHistoryEmpty');
-    if(!hasLocalStorage()){
-      wrap.innerHTML = '';
-      empty.textContent = '이 브라우저(또는 이 미리보기 화면)에서는 로컬 저장 기능을 사용할 수 없습니다.';
-      empty.hidden = false;
-      return;
-    }
     const monthStr = $('localHistoryMonth').value || monthKey();
-    let list = [];
-    try{
-      const raw = localStorage.getItem(localHistoryStorageKey(monthStr));
-      list = raw ? JSON.parse(raw) : [];
-    }catch(e){ list = []; }
+    const list = historyRecords.filter(r => r.date && r.date.indexOf(monthStr) === 0);
+
     if(list.length === 0){
       wrap.innerHTML = '';
-      empty.textContent = monthLabel(monthStr) + '에 이 기기에서 체크인한 기록이 없습니다.';
+      empty.textContent = monthLabel(monthStr) + '에 체크인한 기록이 없습니다.';
       empty.hidden = false;
       return;
     }
     empty.hidden = true;
-    wrap.innerHTML = list.map(r => {
+    // 최신순으로 정렬해서 표시
+    const sorted = [...list].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    wrap.innerHTML = sorted.map(r => {
       const isIn = (r.type || '출근') === '출근';
       const badge = '<span style="display:inline-block;padding:1px 7px;border-radius:20px;font-size:0.7rem;font-weight:600;margin-right:6px;' +
         (isIn ? 'background:var(--mint-soft);color:var(--mint-dark);' : 'background:var(--sky-soft);color:var(--sky-dark);') +
         '">' + (r.type || '출근') + '</span>';
-      return '<div class="building-row"><span>' + badge + escapeHtml(r.name) + (r.building ? ' · ' + escapeHtml(r.building) : '') + '</span>' +
-        '<span style="display:flex; align-items:center; gap:10px;">' + formatDayTime(r.timestamp) +
-        '<button class="local-history-delete" data-id="' + escapeHtml(r.id || '') + '" type="button" ' +
-        'style="background:none;border:none;color:var(--danger-dark);cursor:pointer;font-size:0.74rem;padding:0;text-decoration:underline;">삭제</button>' +
-        '</span></div>';
+      return '<div class="building-row"><span>' + badge + (r.building ? escapeHtml(r.building) : '') + '</span>' +
+        '<span>' + (r.timestamp ? formatDayTime(r.timestamp) : r.date) + '</span></div>';
     }).join('');
-
-    wrap.querySelectorAll('.local-history-delete').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if(!confirm('이 기록을 삭제할까요? 이 폰에 저장된 개인용 기록만 지워지며, 되돌릴 수 없습니다.')) return;
-        deleteLocalHistoryEntry(monthStr, btn.dataset.id);
-      });
-    });
   }
-  function deleteLocalHistoryEntry(monthStr, id){
-    if(!hasLocalStorage()) return;
-    try{
-      const storageKey = localHistoryStorageKey(monthStr);
-      const raw = localStorage.getItem(storageKey);
-      let list = raw ? JSON.parse(raw) : [];
-      list = list.filter(r => r.id !== id);
-      localStorage.setItem(storageKey, JSON.stringify(list));
-    }catch(e){ console.error('로컬 기록 삭제 오류:', e); }
-    renderLocalHistory();
+
+  // 서버에서 오늘 상태 + 퇴근누락 + 체크인 기록을 한 번에 가져와, 화면 전체를 최신 상태로 갱신합니다.
+  // 일시적인 네트워크 오류에 대비해 최대 3번까지 자동 재시도합니다.
+  async function loadHistory(identity){
+    if(!hasWebCrypto()) return;
+    $('todayCheckinTime').textContent = '확인 중…';
+    $('todayCheckoutTime').textContent = '확인 중…';
+    $('historyMsg').textContent = '불러오는 중…';
+    $('historyMsg').className = 'status';
+    $('missingCheckoutBanner').style.display = 'none';
+
+    const MAX_ATTEMPTS = 3;
+    let lastError = '';
+
+    for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+      try{
+        const otp = await generateOtp(identity.secretHex); // 재시도마다 새로 생성(만료 걱정 없음)
+        const res = await callAppsScript({ action: 'history', empId: identity.empId, otp });
+
+        if(res.ok){
+          todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
+          updateCheckinButtons();
+          $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
+          $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
+
+          if(res.missingDates && res.missingDates.length > 0){
+            const banner = $('missingCheckoutBanner');
+            banner.innerHTML = '⚠ <b>퇴근 기록이 누락된 날이 있습니다:</b> ' + res.missingDates.join(', ') +
+              '<br>실제로 퇴근하신 게 맞다면 교원인사팀으로 문의해 주세요.';
+            banner.style.display = 'block';
+          }
+
+          historyRecords = res.records || [];
+          $('historyMsg').textContent = '';
+          renderCheckinHistory();
+          return; // 성공했으니 종료
+        }
+        lastError = res.error || '알 수 없는 오류';
+      }catch(e){
+        console.error('이력 조회 오류(시도 ' + attempt + '):', e);
+        lastError = e.message || String(e);
+      }
+
+      if(attempt < MAX_ATTEMPTS){
+        $('todayCheckinTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
+        $('todayCheckoutTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
+    // 재시도를 다 써도 실패한 경우
+    $('todayCheckinTime').textContent = '확인 실패';
+    $('todayCheckoutTime').textContent = '확인 실패';
+    $('historyMsg').textContent = '기록을 불러오지 못했습니다.';
+    $('historyMsg').className = 'status err';
+    console.error('이력 조회 최종 실패:', lastError);
   }
 
   // ---------- campus config (고정값: 입력 필드에 이미 값이 채워져 있음) ----------
@@ -661,46 +641,6 @@
 
   // 서버(구글 시트)에 오늘 출근/퇴근 기록이 있는지 물어봐서, 새로고침해도 실제 상태와 화면이 어긋나지 않게 합니다.
   // 조회에 실패해도 기본 상태(출근 버튼)로 남을 뿐이며, 실제 체크인 시도는 서버가 다시 정확히 판정하므로 안전합니다.
-  async function syncTodayStatus(identity){
-    if(!hasWebCrypto()) return;
-    $('todayCheckinTime').textContent = '확인 중…';
-    $('todayCheckoutTime').textContent = '확인 중…';
-
-    const MAX_ATTEMPTS = 3;
-    let lastError = '';
-
-    for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
-      try{
-        const otp = await generateOtp(identity.secretHex); // 재시도마다 새로 생성(만료 걱정 없음)
-        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
-        const res = await callAppsScript({ action: 'todayStatus', empId: identity.empId, otp, date: dateStr });
-
-        if(res.ok){
-          todayCheckedIn = !!res.hasCheckin && !res.hasCheckout;
-          updateCheckinButtons();
-          $('todayCheckinTime').textContent = (res.hasCheckin && res.checkinTime) ? formatTime(res.checkinTime) : '-';
-          $('todayCheckoutTime').textContent = (res.hasCheckout && res.checkoutTime) ? formatTime(res.checkoutTime) : '-';
-          return; // 성공했으니 종료
-        }
-        lastError = res.error || '알 수 없는 오류';
-      }catch(e){
-        console.error('오늘 상태 확인 오류(시도 ' + attempt + '):', e);
-        lastError = e.message || String(e);
-      }
-
-      if(attempt < MAX_ATTEMPTS){
-        $('todayCheckinTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
-        $('todayCheckoutTime').textContent = '재시도 중… (' + (attempt + 1) + '/' + MAX_ATTEMPTS + ')';
-        await new Promise(r => setTimeout(r, 1500));
-      }
-    }
-
-    // 여기까지 왔다면 재시도를 다 써도 실패한 것입니다.
-    $('todayCheckinTime').textContent = '확인 실패';
-    $('todayCheckoutTime').textContent = '확인 실패';
-    console.error('오늘 상태 확인 최종 실패:', lastError);
-  }
-
   let leafletMap = null, userMarker = null, userAccuracyCircle = null;
 
   function initCampusMarkersOnMap(){
@@ -755,30 +695,6 @@
     }
   }
 
-  async function checkMissingCheckouts(identity){
-    if(identity.role === '장학조교') return; // 장학조교는 퇴근 개념이 없어 대상 아님
-    const banner = $('missingCheckoutBanner');
-    banner.style.display = 'none';
-    try{
-      const currentMonth = monthKey();
-      const prevMonth = shiftMonth(currentMonth, -1);
-      const allMissing = [];
-      for(const m of [prevMonth, currentMonth]){
-        const otp = await generateOtp(identity.secretHex);
-        const res = await callAppsScript({ action: 'missingCheckouts', empId: identity.empId, otp, month: m });
-        if(res.ok && res.missingDates) allMissing.push(...res.missingDates);
-      }
-      if(allMissing.length > 0){
-        allMissing.sort();
-        banner.innerHTML = '⚠ <b>퇴근 기록이 누락된 날이 있습니다:</b> ' + allMissing.join(', ') +
-          '<br>실제로 퇴근하신 게 맞다면 교원인사팀으로 문의해 주세요.';
-        banner.style.display = 'block';
-      }
-    }catch(e){
-      console.error('퇴근 누락 확인 오류:', e);
-    }
-  }
-
   function refreshIdentityUI(){
     const identity = getStoredIdentity();
     if(identity){
@@ -787,9 +703,8 @@
       identityDisplay.textContent = identity.name + '님 (' + identity.empId + ' · ' + identity.role + ')으로 체크인합니다.';
       todayCheckedIn = false; // 서버 응답이 오기 전까지의 기본 상태(출근 버튼)
       updateCheckinButtons();
-      syncTodayStatus(identity); // 실제 서버 상태로 비동기 갱신
+      loadHistory(identity); // 오늘 상태 + 퇴근누락 + 체크인 기록을 서버에서 한 번에 갱신
       loadMyLocationMap(); // 지도에 현재 위치 표시
-      checkMissingCheckouts(identity); // 최근 퇴근 누락 여부 확인
     }else{
       registerPanel.style.display = 'block';
       checkinPanel.style.display = 'none';
@@ -900,77 +815,15 @@
     statusMsg.textContent = type + ' 기록이 저장되었습니다. (' + formatTime(timestamp) + ')';
     statusMsg.className = 'status ok';
     showStamp(type, formatTime(timestamp));
-    saveLocalHistory({ timestamp, type, name: identity.name, nearestBuilding: res.nearestBuilding || null });
-    renderLocalHistory();
     todayCheckedIn = (type === '출근'); // 출근 성공 시 근무중 상태로, 퇴근 성공 시 다시 기본 상태로
     updateCheckinButtons();
-    if(type === '출근'){
-      $('todayCheckinTime').textContent = formatTime(timestamp);
-    }else{
-      $('todayCheckoutTime').textContent = formatTime(timestamp);
-    }
     updateUserLocationOnMap(coords); // 이미 확보한 좌표를 그대로 재사용 (GPS 재요청 없음)
+    loadHistory(identity); // 오늘 현황·퇴근누락·체크인 기록을 서버에서 다시 가져와 함께 갱신
   }
 
   $('checkinBtn').addEventListener('click', () => record('출근'));
   $('checkoutBtn').addEventListener('click', () => record('퇴근'));
-  $('localHistoryMonth').addEventListener('change', () => renderLocalHistory());
-
-  $('syncHistoryBtn').addEventListener('click', async () => {
-    const identity = getStoredIdentity();
-    const msg = $('syncHistoryMsg');
-    if(!identity){
-      msg.textContent = '먼저 기기 등록을 완료해 주세요.';
-      msg.className = 'status err';
-      return;
-    }
-    if(!hasWebCrypto()){
-      msg.textContent = '이 브라우저는 본인 확인 기능(Web Crypto)을 지원하지 않습니다.';
-      msg.className = 'status err';
-      return;
-    }
-    const monthStr = $('localHistoryMonth').value || monthKey();
-    const btn = $('syncHistoryBtn');
-    btn.disabled = true;
-    msg.textContent = '서버에서 불러오는 중…';
-    msg.className = 'status';
-
-    try{
-      const otp = await generateOtp(identity.secretHex);
-      const res = await callAppsScript({ action: 'sync', empId: identity.empId, otp, month: monthStr });
-      if(!res.ok){
-        msg.textContent = res.error || '불러오기에 실패했습니다.';
-        msg.className = 'status err';
-        return;
-      }
-      const rawRecords = res.records || [];
-      const validRecords = rawRecords.filter(r => r.timestamp && !isNaN(new Date(r.timestamp).getTime()));
-      const skipped = rawRecords.length - validRecords.length;
-      const list = validRecords.map(r => ({
-        id: uid(),
-        timestamp: r.timestamp,
-        type: r.type,
-        name: identity.name,
-        building: r.building || null
-      }));
-      list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // 최신순 (평소 저장 방식과 동일)
-      // 서버 기록으로 이 달의 로컬 기록을 통째로 교체합니다(서버가 항상 정답).
-      try{
-        localStorage.setItem(localHistoryStorageKey(monthStr), JSON.stringify(list));
-      }catch(e){
-        console.error('로컬 저장 오류:', e);
-        msg.textContent = '서버에서는 불러왔지만, 이 기기에 저장하지 못했습니다.';
-        msg.className = 'status err';
-        return;
-      }
-      msg.textContent = list.length + '건을 서버에서 불러왔습니다.' +
-        (skipped > 0 ? ' (시간 정보가 없는 오래된 기록 ' + skipped + '건은 제외됨)' : '');
-      msg.className = 'status ok';
-      renderLocalHistory();
-    } finally {
-      btn.disabled = false;
-    }
-  });
+  $('localHistoryMonth').addEventListener('change', () => renderCheckinHistory()); // 이미 받아온 데이터를 다시 필터링만 함(서버 재호출 없음)
 
   // ---------- init ----------
   (async function init(){
@@ -984,8 +837,7 @@
       '<span>' + b.name + '</span>'
     ).join('');
     populateMonthSelect();
-    cleanupOldLocalHistory();
-    renderLocalHistory();
+    renderCheckinHistory();
     refreshIdentityUI();
 
     const banner = $('envBanner');
