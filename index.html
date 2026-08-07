@@ -91,14 +91,6 @@
   .building-list{
     border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-top: 6px;
   }
-  .building-chips{
-    display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;
-  }
-  .building-chips span{
-    display:inline-block; white-space:nowrap;
-    background: var(--teal-soft); color: var(--teal-dark);
-    padding:5px 12px; border-radius:20px; font-size:0.82rem; font-weight:500;
-  }
   .building-row{
     display:flex; justify-content:space-between; align-items:center;
     padding: 7px 10px; font-size:0.82rem; background: var(--bg);
@@ -235,10 +227,7 @@
     </section>
 
     <section class="card settings-card">
-      <h3>캠퍼스 건물 (고정값)</h3>
-      <p class="hint">아래 건물 중 <b>가장 가까운 건물</b>까지의 거리가 허용 반경 이내면 "교내"로 판정합니다.</p>
-
-      <div class="building-chips" id="buildingList"></div>
+      <p class="hint">교내 건물 중 <b>가장 가까운 건물</b>까지의 거리가 허용 반경 이내면 "교내"로 판정합니다.</p>
 
       <label for="campusRadius">허용 반경 (m)</label>
       <input id="campusRadius" type="number" value="100" readonly>
@@ -862,9 +851,6 @@
       location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
     }
 
-    $('buildingList').innerHTML = CAMPUS_BUILDINGS.map(b =>
-      '<span>' + b.name + '</span>'
-    ).join('');
     populateMonthSelect();
     renderCheckinHistory();
     refreshIdentityUI();
