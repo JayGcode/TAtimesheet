@@ -338,7 +338,7 @@
 
         <p class="hint" style="margin-top:16px;"><b>단축근무 기간 1</b> (예: 여름방학)</p>
         <label for="schedulePeriod1Label">설명</label>
-        <input id="schedulePeriod1Label" type="text" placeholder="예: 여름방학 단축근무">
+        <input id="schedulePeriod1Label" type="text" placeholder="예: 여름방학 첫주">
         <label for="schedulePeriod1Start">시작일</label>
         <input id="schedulePeriod1Start" type="date">
         <label for="schedulePeriod1End">종료일</label>
@@ -348,9 +348,9 @@
         <label for="schedulePeriod1EndTime">이 기간 퇴근 시간</label>
         <input id="schedulePeriod1EndTime" type="time">
 
-        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 2</b> (예: 겨울방학)</p>
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 2</b> (예: 여름방학 본기간)</p>
         <label for="schedulePeriod2Label">설명</label>
-        <input id="schedulePeriod2Label" type="text" placeholder="예: 겨울방학 단축근무">
+        <input id="schedulePeriod2Label" type="text" placeholder="예: 여름방학 본기간">
         <label for="schedulePeriod2Start">시작일</label>
         <input id="schedulePeriod2Start" type="date">
         <label for="schedulePeriod2End">종료일</label>
@@ -359,6 +359,54 @@
         <input id="schedulePeriod2StartTime" type="time">
         <label for="schedulePeriod2EndTime">이 기간 퇴근 시간</label>
         <input id="schedulePeriod2EndTime" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 3</b> (예: 여름방학 마지막주)</p>
+        <label for="schedulePeriod3Label">설명</label>
+        <input id="schedulePeriod3Label" type="text" placeholder="예: 여름방학 마지막주">
+        <label for="schedulePeriod3Start">시작일</label>
+        <input id="schedulePeriod3Start" type="date">
+        <label for="schedulePeriod3End">종료일</label>
+        <input id="schedulePeriod3End" type="date">
+        <label for="schedulePeriod3StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod3StartTime" type="time">
+        <label for="schedulePeriod3EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod3EndTime" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 4</b> (예: 겨울방학 첫주)</p>
+        <label for="schedulePeriod4Label">설명</label>
+        <input id="schedulePeriod4Label" type="text" placeholder="예: 겨울방학 첫주">
+        <label for="schedulePeriod4Start">시작일</label>
+        <input id="schedulePeriod4Start" type="date">
+        <label for="schedulePeriod4End">종료일</label>
+        <input id="schedulePeriod4End" type="date">
+        <label for="schedulePeriod4StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod4StartTime" type="time">
+        <label for="schedulePeriod4EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod4EndTime" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 5</b> (예: 겨울방학 본기간)</p>
+        <label for="schedulePeriod5Label">설명</label>
+        <input id="schedulePeriod5Label" type="text" placeholder="예: 겨울방학 본기간">
+        <label for="schedulePeriod5Start">시작일</label>
+        <input id="schedulePeriod5Start" type="date">
+        <label for="schedulePeriod5End">종료일</label>
+        <input id="schedulePeriod5End" type="date">
+        <label for="schedulePeriod5StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod5StartTime" type="time">
+        <label for="schedulePeriod5EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod5EndTime" type="time">
+
+        <p class="hint" style="margin-top:16px;"><b>단축근무 기간 6</b> (예: 겨울방학 마지막주)</p>
+        <label for="schedulePeriod6Label">설명</label>
+        <input id="schedulePeriod6Label" type="text" placeholder="예: 겨울방학 마지막주">
+        <label for="schedulePeriod6Start">시작일</label>
+        <input id="schedulePeriod6Start" type="date">
+        <label for="schedulePeriod6End">종료일</label>
+        <input id="schedulePeriod6End" type="date">
+        <label for="schedulePeriod6StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod6StartTime" type="time">
+        <label for="schedulePeriod6EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod6EndTime" type="time">
 
         <div class="btn-row" style="margin-top:14px;">
           <button id="saveScheduleBtn" type="button" class="btn btn-primary">저장</button>
@@ -1247,16 +1295,14 @@
       const s = res.schedule;
       $('scheduleDefaultStart').value = s.defaultStart || '';
       $('scheduleDefaultEnd').value = s.defaultEnd || '';
-      $('schedulePeriod1Label').value = s.period1.label || '';
-      $('schedulePeriod1Start').value = s.period1.start || '';
-      $('schedulePeriod1End').value = s.period1.end || '';
-      $('schedulePeriod1StartTime').value = s.period1.startTime || '';
-      $('schedulePeriod1EndTime').value = s.period1.endTime || '';
-      $('schedulePeriod2Label').value = s.period2.label || '';
-      $('schedulePeriod2Start').value = s.period2.start || '';
-      $('schedulePeriod2End').value = s.period2.end || '';
-      $('schedulePeriod2StartTime').value = s.period2.startTime || '';
-      $('schedulePeriod2EndTime').value = s.period2.endTime || '';
+      for(let i = 1; i <= 6; i++){
+        const p = s['period' + i] || {};
+        $('schedulePeriod' + i + 'Label').value = p.label || '';
+        $('schedulePeriod' + i + 'Start').value = p.start || '';
+        $('schedulePeriod' + i + 'End').value = p.end || '';
+        $('schedulePeriod' + i + 'StartTime').value = p.startTime || '';
+        $('schedulePeriod' + i + 'EndTime').value = p.endTime || '';
+      }
     }catch(e){
       msg.textContent = '오류: ' + (e.message || e);
       msg.className = 'status err';
@@ -1275,21 +1321,19 @@
     msg.textContent = '저장하는 중…';
     msg.className = 'status';
     try{
-      const res = await adminCall('adminSaveWorkSchedule', {
+      const payload = {
         year: $('scheduleYear').value,
         defaultStart: $('scheduleDefaultStart').value,
-        defaultEnd: $('scheduleDefaultEnd').value,
-        period1Label: $('schedulePeriod1Label').value,
-        period1Start: $('schedulePeriod1Start').value,
-        period1End: $('schedulePeriod1End').value,
-        period1StartTime: $('schedulePeriod1StartTime').value,
-        period1EndTime: $('schedulePeriod1EndTime').value,
-        period2Label: $('schedulePeriod2Label').value,
-        period2Start: $('schedulePeriod2Start').value,
-        period2End: $('schedulePeriod2End').value,
-        period2StartTime: $('schedulePeriod2StartTime').value,
-        period2EndTime: $('schedulePeriod2EndTime').value
-      });
+        defaultEnd: $('scheduleDefaultEnd').value
+      };
+      for(let i = 1; i <= 6; i++){
+        payload['period' + i + 'Label'] = $('schedulePeriod' + i + 'Label').value;
+        payload['period' + i + 'Start'] = $('schedulePeriod' + i + 'Start').value;
+        payload['period' + i + 'End'] = $('schedulePeriod' + i + 'End').value;
+        payload['period' + i + 'StartTime'] = $('schedulePeriod' + i + 'StartTime').value;
+        payload['period' + i + 'EndTime'] = $('schedulePeriod' + i + 'EndTime').value;
+      }
+      const res = await adminCall('adminSaveWorkSchedule', payload);
       if(!res.ok){
         msg.textContent = res.error || '저장하지 못했습니다.';
         msg.className = 'status err';
