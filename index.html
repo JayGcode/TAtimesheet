@@ -159,17 +159,14 @@
   .local-history-card{ margin-bottom: 20px; }
   .foot-note{ font-size:0.76rem; color: var(--ink-soft); text-align:center; margin-top: 18px; line-height:1.6; }
 
-  .admin-cal{ border-collapse: collapse; width:100%; min-width:560px; }
-  .admin-cal th, .admin-cal td{ border:1px solid var(--line); padding:6px; vertical-align:top; font-size:0.78rem; }
+  .admin-cal{ border-collapse: collapse; width:100%; table-layout: fixed; }
+  .admin-cal th, .admin-cal td{ border:1px solid var(--line); padding:4px 2px; vertical-align:top; font-size:0.76rem; }
   .admin-cal th{ background: var(--teal-soft); color: var(--teal-dark); text-align:center; }
-  .admin-cal td{ height:64px; width:14.28%; }
-  .admin-cal .daynum{ font-weight:600; color: var(--ink-soft); font-size:0.72rem; }
-  .admin-cal td.status-정상{ background: var(--mint-soft); }
-  .admin-cal td.status-퇴근누락{ background: var(--danger-soft); }
-  .admin-cal td.status-결근{ background: #FADBD8; }
-  .admin-cal td.status-지각{ background: #FDEBD0; }
-  .admin-cal td.status-휴가{ background: var(--sky-soft); }
-  .admin-cal td.status-휴무{ background: var(--bg); color: var(--ink-soft); }
+  .admin-cal td{ height:44px; width:14.28%; text-align:center; vertical-align:middle; }
+  .admin-cal .daynum{ font-weight:600; color: var(--ink-soft); font-size:0.78rem; }
+  .admin-cal-ok{ background: var(--sky-soft); cursor:pointer; }
+  .admin-cal-issue{ background: #FDEBD0; cursor:pointer; }
+  .admin-cal-ok:active, .admin-cal-issue:active{ opacity:0.7; }
   .admin-cal .sun{ color: #C0392B; }
   .admin-cal .sat{ color: #2C5FA8; }
 
@@ -328,10 +325,16 @@
 
       <div id="adminScheduleView" style="display:none; margin-top:18px;">
         <h3>근무시간 설정</h3>
-        <p class="hint">행정조교(일반조교) 기준 근무 시작 시간입니다. 이 시간 이후 출근하면 "지각"으로 표시됩니다. 장학조교·관리자는 지각 판정 대상이 아닙니다.</p>
+        <p class="hint">행정조교(일반조교) 기준 근무시간입니다. 출근시간 이후 출근하면 "지각", 퇴근시간 이전에 퇴근하면 "조퇴"로 표시됩니다. 장학조교·관리자는 대상이 아닙니다. 연도마다 따로 설정할 수 있습니다.</p>
 
-        <label for="scheduleDefaultTime">기본 근무시작 시간</label>
-        <input id="scheduleDefaultTime" type="time">
+        <label for="scheduleYear">설정할 연도</label>
+        <input id="scheduleYear" type="number" step="1" style="max-width:120px;">
+
+        <p class="hint" style="margin-top:16px;"><b>기본 근무시간</b></p>
+        <label for="scheduleDefaultStart">출근 시간</label>
+        <input id="scheduleDefaultStart" type="time">
+        <label for="scheduleDefaultEnd">퇴근 시간</label>
+        <input id="scheduleDefaultEnd" type="time">
 
         <p class="hint" style="margin-top:16px;"><b>단축근무 기간 1</b> (예: 여름방학)</p>
         <label for="schedulePeriod1Label">설명</label>
@@ -340,8 +343,10 @@
         <input id="schedulePeriod1Start" type="date">
         <label for="schedulePeriod1End">종료일</label>
         <input id="schedulePeriod1End" type="date">
-        <label for="schedulePeriod1Time">이 기간의 근무시작 시간</label>
-        <input id="schedulePeriod1Time" type="time">
+        <label for="schedulePeriod1StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod1StartTime" type="time">
+        <label for="schedulePeriod1EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod1EndTime" type="time">
 
         <p class="hint" style="margin-top:16px;"><b>단축근무 기간 2</b> (예: 겨울방학)</p>
         <label for="schedulePeriod2Label">설명</label>
@@ -350,8 +355,10 @@
         <input id="schedulePeriod2Start" type="date">
         <label for="schedulePeriod2End">종료일</label>
         <input id="schedulePeriod2End" type="date">
-        <label for="schedulePeriod2Time">이 기간의 근무시작 시간</label>
-        <input id="schedulePeriod2Time" type="time">
+        <label for="schedulePeriod2StartTime">이 기간 출근 시간</label>
+        <input id="schedulePeriod2StartTime" type="time">
+        <label for="schedulePeriod2EndTime">이 기간 퇴근 시간</label>
+        <input id="schedulePeriod2EndTime" type="time">
 
         <div class="btn-row" style="margin-top:14px;">
           <button id="saveScheduleBtn" type="button" class="btn btn-primary">저장</button>
@@ -1085,11 +1092,15 @@
     }
   }
 
+  let currentAdminDays = []; // 최근 조회한 달력의 일자별 데이터(날짜 클릭 시 상세보기에 사용)
+  const ADMIN_ISSUE_STATUSES = ['지각', '조퇴', '지각조퇴', '퇴근누락', '결근'];
+
   function renderAdminCalendar(res, monthStr){
     const wrap = $('adminCalendarWrap');
     const [year, month] = monthStr.split('-').map(Number);
     const firstDow = new Date(year, month - 1, 1).getDay();
     const days = res.days || [];
+    currentAdminDays = days;
 
     let html = '<table class="admin-cal"><thead><tr>';
     ['일','월','화','수','목','금','토'].forEach((d,i) => {
@@ -1103,22 +1114,34 @@
     days.forEach(d => {
       if(col === 7){ html += '</tr><tr>'; col = 0; }
       const dowClass = d.dow===0?'sun':d.dow===6?'sat':'';
-      let inner = '<div class="daynum ' + dowClass + '">' + d.day + '</div>';
-      if(d.status === '정상' || d.status === '퇴근누락' || d.status === '지각'){
-        if(d.checkin) inner += '<div>출 ' + formatTime(d.checkin) + '</div>';
-        if(d.checkout) inner += '<div>퇴 ' + formatTime(d.checkout) + '</div>';
-        if(d.status === '퇴근누락') inner += '<div>⚠퇴근누락</div>';
-        if(d.status === '지각') inner += '<div>⏰지각</div>';
-      } else if(d.status){
-        inner += '<div>' + d.status + '</div>';
+      if(d.status){
+        const colorClass = ADMIN_ISSUE_STATUSES.includes(d.status) ? 'admin-cal-issue' : 'admin-cal-ok';
+        html += '<td class="' + colorClass + '" data-date="' + d.date + '"><div class="daynum ' + dowClass + '">' + d.day + '</div></td>';
+      } else {
+        html += '<td><div class="daynum ' + dowClass + '">' + d.day + '</div></td>';
       }
-      html += '<td class="status-' + d.status + '">' + inner + '</td>';
       col++;
     });
     while(col < 7){ html += '<td></td>'; col++; }
     html += '</tr></tbody></table>';
+    html += '<div id="adminDayDetail" class="hint" style="margin-top:10px; min-height:20px;"></div>';
 
     wrap.innerHTML = '<p class="hint" style="margin-bottom:8px;"><b>' + escapeHtml(res.name || '') + '</b> (' + escapeHtml(res.role || '') + ')</p>' + html;
+
+    wrap.querySelectorAll('td[data-date]').forEach(td => {
+      td.addEventListener('click', () => showAdminDayDetail(td.dataset.date));
+    });
+  }
+
+  function showAdminDayDetail(dateStr){
+    const day = currentAdminDays.find(d => d.date === dateStr);
+    const detail = $('adminDayDetail');
+    if(!day || !day.status){ detail.innerHTML = ''; return; }
+
+    let text = '<b>' + dateStr + '</b> — ' + day.status;
+    if(day.checkin) text += ' · 출근 ' + formatTime(day.checkin);
+    if(day.checkout) text += ' · 퇴근 ' + formatTime(day.checkout);
+    detail.innerHTML = text;
   }
 
   async function loadAdminAbsences(){
@@ -1147,37 +1170,51 @@
 
   function renderAdminAbsences(res, empId, month){
     const wrap = $('adminAbsenceList');
-    const absences = res.absences || [];
-    if(absences.length === 0){
-      wrap.innerHTML = '<p class="hint">' + monthLabel(month) + '에 결근으로 표시된 날이 없습니다.</p>';
+    const issues = res.issues || [];
+    if(issues.length === 0){
+      wrap.innerHTML = '<p class="hint">' + monthLabel(month) + '에 결근·지각·조퇴로 표시된 날이 없습니다.</p>';
       return;
     }
     const dowLabels = ['일','월','화','수','목','금','토'];
-    wrap.innerHTML = absences.map(a => {
+
+    function buttonsFor(status, date){
+      if(status === '결근'){
+        return '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="휴가">연차전환</button>' +
+               '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="휴무">휴무전환</button>';
+      }
+      if(status === '지각'){
+        return '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="오전반차">오전반차 전환</button>';
+      }
+      if(status === '조퇴'){
+        return '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="오후반차">오후반차 전환</button>';
+      }
+      if(status === '지각조퇴'){
+        return '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="오전반차">오전반차 전환</button>' +
+               '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="오후반차">오후반차 전환</button>' +
+               '<button type="button" class="btn btn-ghost admin-status-btn" data-date="' + date + '" data-status="종일반차">종일반차 전환</button>';
+      }
+      return '';
+    }
+
+    wrap.innerHTML = issues.map(a => {
       const dowText = dowLabels[a.dow] || '';
-      return '<div class="absence-row">' +
-        '<span>' + a.date + ' (' + dowText + ')</span>' +
-        '<span class="btn-row" style="margin:0;">' +
-          '<button type="button" class="btn btn-ghost admin-leave-btn" data-date="' + a.date + '">연차전환</button>' +
-          '<button type="button" class="btn btn-ghost admin-off-btn" data-date="' + a.date + '">휴무전환</button>' +
-        '</span>' +
+      return '<div class="absence-row" style="flex-wrap:wrap; gap:6px;">' +
+        '<span>' + a.date + ' (' + dowText + ') · ' + a.status + '</span>' +
+        '<span class="btn-row" style="margin:0; flex-wrap:wrap;">' + buttonsFor(a.status, a.date) + '</span>' +
       '</div>';
     }).join('');
 
-    wrap.querySelectorAll('.admin-leave-btn').forEach(btn => {
-      btn.addEventListener('click', () => markAdminDay(empId, btn.dataset.date, 'adminMarkLeave'));
-    });
-    wrap.querySelectorAll('.admin-off-btn').forEach(btn => {
-      btn.addEventListener('click', () => markAdminDay(empId, btn.dataset.date, 'adminMarkOff'));
+    wrap.querySelectorAll('.admin-status-btn').forEach(btn => {
+      btn.addEventListener('click', () => markAdminDay(empId, btn.dataset.date, btn.dataset.status));
     });
   }
 
-  async function markAdminDay(empId, date, action){
+  async function markAdminDay(empId, date, status){
     const msg = $('adminLeaveMsg');
     msg.textContent = '처리 중…';
     msg.className = 'status';
     try{
-      const res = await adminCall(action, { empId, date });
+      const res = await adminCall('adminSetOverride', { empId, date, status });
       if(!res.ok){
         msg.textContent = res.error || '처리하지 못했습니다.';
         msg.className = 'status err';
@@ -1185,7 +1222,7 @@
       }
       msg.textContent = '반영되었습니다.';
       msg.className = 'status ok';
-      loadAdminAbsences(); // 목록 갱신 (전환된 날짜는 결근 목록에서 사라짐)
+      loadAdminAbsences(); // 목록 갱신 (전환된 날짜는 목록에서 사라짐)
     }catch(e){
       msg.textContent = '오류: ' + (e.message || e);
       msg.className = 'status err';
@@ -1196,8 +1233,11 @@
     const msg = $('adminScheduleMsg');
     msg.textContent = '불러오는 중…';
     msg.className = 'status';
+    if(!$('scheduleYear').value){
+      $('scheduleYear').value = new Date().getFullYear();
+    }
     try{
-      const res = await adminCall('adminGetWorkSchedule');
+      const res = await adminCall('adminGetWorkSchedule', { year: $('scheduleYear').value });
       if(!res.ok){
         msg.textContent = res.error || '불러오지 못했습니다.';
         msg.className = 'status err';
@@ -1205,36 +1245,50 @@
       }
       msg.textContent = '';
       const s = res.schedule;
-      $('scheduleDefaultTime').value = s.defaultTime || '';
+      $('scheduleDefaultStart').value = s.defaultStart || '';
+      $('scheduleDefaultEnd').value = s.defaultEnd || '';
       $('schedulePeriod1Label').value = s.period1.label || '';
       $('schedulePeriod1Start').value = s.period1.start || '';
       $('schedulePeriod1End').value = s.period1.end || '';
-      $('schedulePeriod1Time').value = s.period1.time || '';
+      $('schedulePeriod1StartTime').value = s.period1.startTime || '';
+      $('schedulePeriod1EndTime').value = s.period1.endTime || '';
       $('schedulePeriod2Label').value = s.period2.label || '';
       $('schedulePeriod2Start').value = s.period2.start || '';
       $('schedulePeriod2End').value = s.period2.end || '';
-      $('schedulePeriod2Time').value = s.period2.time || '';
+      $('schedulePeriod2StartTime').value = s.period2.startTime || '';
+      $('schedulePeriod2EndTime').value = s.period2.endTime || '';
     }catch(e){
       msg.textContent = '오류: ' + (e.message || e);
       msg.className = 'status err';
     }
   }
 
+  $('scheduleYear').addEventListener('change', loadAdminSchedule);
+
   $('saveScheduleBtn').addEventListener('click', async () => {
     const msg = $('adminScheduleMsg');
+    if(!$('scheduleYear').value){
+      msg.textContent = '연도를 입력해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
     msg.textContent = '저장하는 중…';
     msg.className = 'status';
     try{
       const res = await adminCall('adminSaveWorkSchedule', {
-        defaultTime: $('scheduleDefaultTime').value,
+        year: $('scheduleYear').value,
+        defaultStart: $('scheduleDefaultStart').value,
+        defaultEnd: $('scheduleDefaultEnd').value,
         period1Label: $('schedulePeriod1Label').value,
         period1Start: $('schedulePeriod1Start').value,
         period1End: $('schedulePeriod1End').value,
-        period1Time: $('schedulePeriod1Time').value,
+        period1StartTime: $('schedulePeriod1StartTime').value,
+        period1EndTime: $('schedulePeriod1EndTime').value,
         period2Label: $('schedulePeriod2Label').value,
         period2Start: $('schedulePeriod2Start').value,
         period2End: $('schedulePeriod2End').value,
-        period2Time: $('schedulePeriod2Time').value
+        period2StartTime: $('schedulePeriod2StartTime').value,
+        period2EndTime: $('schedulePeriod2EndTime').value
       });
       if(!res.ok){
         msg.textContent = res.error || '저장하지 못했습니다.';
