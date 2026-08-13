@@ -929,24 +929,27 @@
       return;
     }
 
-    statusMsg.textContent = '위치를 확인하는 중…';
+    statusMsg.textContent = '위치 및 본인 확인 정보를 조회하는 중…';
     statusMsg.className = 'status';
 
-    let coords;
+    // 서로 무관한 네 가지 조회(위치, 공인 IP, 신뢰 시각, OTP)를 동시에 실행해 대기시간을 줄입니다.
+    // (예전에는 하나씩 순서대로 기다렸지만, 굳이 그럴 필요가 없는 독립적인 작업들입니다.)
+    let coords, ip, now, otp;
     try{
-      coords = await getLocation();
+      [coords, ip, now, otp] = await Promise.all([
+        getLocation(),
+        getPublicIp(),       // 실패해도 null일 뿐, 체크인 자체는 막지 않음(교내 판정은 서버가 함)
+        getTrustedNow(),     // 실패해도 기기 시계로 대체됨
+        generateOtp(identity.secretHex)
+      ]);
     }catch(e){
       statusMsg.textContent = e.message;
       statusMsg.className = 'status err';
       return;
     }
-
-    const ip = await getPublicIp(); // 실패해도 null일 뿐, 체크인 자체는 막지 않음(교내 판정은 서버가 함)
-    const now = await getTrustedNow(); // 기기 시계 대신 외부 서버 시각을 우선 사용 (실패 시 기기 시계로 대체)
-    const otp = await generateOtp(identity.secretHex);
     const timestamp = now.toISOString();
 
-    statusMsg.textContent = '본인 확인 및 위치 확인 중…';
+    statusMsg.textContent = '기록을 저장하는 중…';
 
     // 교내/교외 판정(건물·IP 대조)은 서버(앱스 스크립트)가 직접 계산해서 최종 승인 여부를 결정합니다.
     // 클라이언트는 원본 좌표·IP만 전달하며, 이 값을 조작해도 서버 쪽 판정을 우회할 수 없습니다.
@@ -976,7 +979,17 @@
     todayCheckedIn = (type === '출근'); // 출근 성공 시 근무중 상태로, 퇴근 성공 시 다시 기본 상태로
     updateCheckinButtons();
     updateUserLocationOnMap(coords); // 이미 확보한 좌표를 그대로 재사용 (GPS 재요청 없음)
-    loadHistory(identity); // 오늘 현황·퇴근누락·체크인 기록을 서버에서 다시 가져와 함께 갱신
+
+    // 서버를 다시 조회하지 않고, 방금 성공한 응답 내용을 화면에 바로 반영합니다.
+    // (checkin 응답 자체가 이미 정답을 담고 있어서, 곧바로 이어서 history를 재조회할 필요가 없습니다.)
+    if(type === '출근'){
+      $('todayCheckinTime').textContent = formatTime(timestamp);
+    }else{
+      $('todayCheckoutTime').textContent = formatTime(timestamp);
+    }
+    const todayDateStr = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' }).format(now);
+    historyRecords.unshift({ date: todayDateStr, type, timestamp, building: res.nearestBuilding || '' });
+    renderCheckinHistory();
   }
 
   $('checkinBtn').addEventListener('click', () => record('출근'));
