@@ -320,11 +320,23 @@
       <div style="display:flex; flex-direction:column; gap:10px;">
         <button id="adminMenuAttendanceBtn" type="button" class="btn btn-checkin" style="width:100%;">조교 출퇴근 현황 확인</button>
         <button id="adminMenuLeaveBtn" type="button" class="btn btn-checkout" style="width:100%;">조교 연차, 휴무 반영</button>
+        <button id="adminMenuTimeAdjustBtn" type="button" class="btn btn-checkout" style="width:100%;">조교 출퇴근 시간 조정</button>
         <button id="adminMenuScheduleBtn" type="button" class="btn btn-primary" style="width:100%;">근무시간 설정</button>
         <button id="adminMenuRecoveryBtn" type="button" class="btn btn-ghost" style="width:100%;">복구 요청 확인</button>
       </div>
       <div class="btn-row" style="margin-top:10px;">
         <button id="adminBackBtn2" type="button" class="btn btn-ghost">조교 화면으로</button>
+      </div>
+
+      <div id="adminTimeAdjustView" style="display:none; margin-top:18px;">
+        <h3>조교 출퇴근 시간 조정</h3>
+        <p class="hint">출근·퇴근 기록이 누락된 날을 승인하면, "근무시간 설정"에 정한 시각으로 정상 출근·퇴근 기록이 자동 생성됩니다. 이미 있는 기록은 건드리지 않고, 없는 것만 채웁니다.</p>
+        <label for="adminTimeAdjustPerson">조교 선택</label>
+        <select id="adminTimeAdjustPerson"></select>
+        <label for="adminTimeAdjustMonth">조회할 월</label>
+        <select id="adminTimeAdjustMonth"></select>
+        <p id="adminTimeAdjustMsg" class="status" aria-live="polite"></p>
+        <div id="adminTimeAdjustList" style="margin-top:10px;"></div>
       </div>
 
       <div id="adminRecoveryView" style="display:none; margin-top:18px;">
@@ -1187,6 +1199,7 @@
     $('adminLeaveView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
     $('adminRecoveryView').style.display = 'none';
+    $('adminTimeAdjustView').style.display = 'none';
   }
 
   $('adminMenuOpenBtn').addEventListener('click', async () => {
@@ -1239,6 +1252,7 @@
     ).join('');
     $('adminAttPerson').innerHTML = optionsHtml;
     $('adminLeavePerson').innerHTML = optionsHtml;
+    $('adminTimeAdjustPerson').innerHTML = optionsHtml;
   }
   function populateAdminMonthSelects(){
     const current = monthKey();
@@ -1252,6 +1266,8 @@
     $('adminAttMonth').value = current;
     $('adminLeaveMonth').innerHTML = optionsHtml;
     $('adminLeaveMonth').value = current;
+    $('adminTimeAdjustMonth').innerHTML = optionsHtml;
+    $('adminTimeAdjustMonth').value = current;
   }
 
   $('adminMenuAttendanceBtn').addEventListener('click', () => {
@@ -1259,6 +1275,7 @@
     $('adminLeaveView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
     $('adminRecoveryView').style.display = 'none';
+    $('adminTimeAdjustView').style.display = 'none';
     loadAdminAttendance();
   });
   $('adminMenuLeaveBtn').addEventListener('click', () => {
@@ -1266,13 +1283,23 @@
     $('adminAttendanceView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
     $('adminRecoveryView').style.display = 'none';
+    $('adminTimeAdjustView').style.display = 'none';
     loadAdminAbsences();
+  });
+  $('adminMenuTimeAdjustBtn').addEventListener('click', () => {
+    $('adminTimeAdjustView').style.display = 'block';
+    $('adminAttendanceView').style.display = 'none';
+    $('adminLeaveView').style.display = 'none';
+    $('adminScheduleView').style.display = 'none';
+    $('adminRecoveryView').style.display = 'none';
+    loadAdminTimeAdjustList();
   });
   $('adminMenuScheduleBtn').addEventListener('click', () => {
     $('adminScheduleView').style.display = 'block';
     $('adminAttendanceView').style.display = 'none';
     $('adminLeaveView').style.display = 'none';
     $('adminRecoveryView').style.display = 'none';
+    $('adminTimeAdjustView').style.display = 'none';
     loadAdminSchedule();
   });
   $('adminMenuRecoveryBtn').addEventListener('click', () => {
@@ -1280,8 +1307,11 @@
     $('adminAttendanceView').style.display = 'none';
     $('adminLeaveView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
+    $('adminTimeAdjustView').style.display = 'none';
     loadAdminRecoveryRequests();
   });
+  $('adminTimeAdjustPerson').addEventListener('change', loadAdminTimeAdjustList);
+  $('adminTimeAdjustMonth').addEventListener('change', loadAdminTimeAdjustList);
   $('adminAttPerson').addEventListener('change', loadAdminAttendance);
   $('adminAttMonth').addEventListener('change', loadAdminAttendance);
   $('adminLeavePerson').addEventListener('change', loadAdminAbsences);
@@ -1571,6 +1601,70 @@
       msg.textContent = '승인되었습니다.';
       msg.className = 'status ok';
       loadAdminRecoveryRequests(); // 목록 갱신 (승인된 요청은 사라짐)
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
+
+  async function loadAdminTimeAdjustList(){
+    const empId = $('adminTimeAdjustPerson').value;
+    const month = $('adminTimeAdjustMonth').value;
+    if(!empId || !month) return;
+    const msg = $('adminTimeAdjustMsg');
+    const wrap = $('adminTimeAdjustList');
+    msg.textContent = '불러오는 중…';
+    msg.className = 'status';
+    wrap.innerHTML = '';
+    try{
+      const res = await adminCall('adminTimeAdjustList', { empId, month });
+      if(!res.ok){
+        msg.textContent = res.error || '불러오지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '';
+      renderAdminTimeAdjustList(res.targets || [], empId);
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
+
+  function renderAdminTimeAdjustList(targets, empId){
+    const wrap = $('adminTimeAdjustList');
+    if(targets.length === 0){
+      wrap.innerHTML = '<p class="hint">출근·퇴근 누락으로 표시된 날이 없습니다.</p>';
+      return;
+    }
+    const dowLabels = ['일','월','화','수','목','금','토'];
+    wrap.innerHTML = targets.map(t => {
+      const dowText = dowLabels[t.dow] || '';
+      return '<div class="absence-row">' +
+        '<span>' + t.date + ' (' + dowText + ') · ' + t.status + '</span>' +
+        '<button type="button" class="btn btn-ghost admin-timeadjust-btn" data-date="' + t.date + '">승인</button>' +
+      '</div>';
+    }).join('');
+
+    wrap.querySelectorAll('.admin-timeadjust-btn').forEach(btn => {
+      btn.addEventListener('click', () => applyTimeAdjust(empId, btn.dataset.date));
+    });
+  }
+
+  async function applyTimeAdjust(empId, date){
+    const msg = $('adminTimeAdjustMsg');
+    msg.textContent = '처리 중…';
+    msg.className = 'status';
+    try{
+      const res = await adminCall('adminApplyTimeAdjust', { empId, date });
+      if(!res.ok){
+        msg.textContent = res.error || '처리하지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = (res.created || []).join(', ') + ' 기록이 생성되었습니다.';
+      msg.className = 'status ok';
+      loadAdminTimeAdjustList(); // 목록 갱신 (해결된 날짜는 사라짐)
     }catch(e){
       msg.textContent = '오류: ' + (e.message || e);
       msg.className = 'status err';
