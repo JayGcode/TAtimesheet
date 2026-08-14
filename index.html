@@ -200,17 +200,40 @@
       <p class="hint">최초 1회 기기 등록 후에는 이름을 직접 입력하지 않고, 등록된 본인 확인(OTP)으로 자동 체크인됩니다. (개인 휴대폰 전용)</p>
 
       <div id="registerPanel">
-        <label for="empId">인사번호</label>
-        <input id="empId" type="text" placeholder="예: 2024001" autocomplete="off" inputmode="numeric">
+        <div id="normalRegisterForm">
+          <label for="empId">인사번호</label>
+          <input id="empId" type="text" placeholder="예: 2024001" autocomplete="off" inputmode="numeric">
 
-        <label for="setupCode">등록코드</label>
-        <input id="setupCode" type="text" placeholder="관리자에게 받은 등록코드" autocomplete="off">
+          <label for="setupCode">등록코드</label>
+          <input id="setupCode" type="text" placeholder="관리자에게 받은 등록코드" autocomplete="off">
 
-        <div class="btn-row">
-          <button id="registerBtn" class="btn btn-primary">기기 등록</button>
+          <div class="btn-row">
+            <button id="registerBtn" class="btn btn-primary">기기 등록</button>
+          </div>
+          <p id="registerMsg" class="status" aria-live="polite"></p>
+          <p class="hint" style="margin-top:8px;">※ 기기 등록 후 동일한 브라우저를 이용하여야 하며, 기기 재등록이 필요한 경우 교원인사팀으로 문의하여 주시기 바랍니다.</p>
+
+          <div class="btn-row" style="margin-top:10px;">
+            <button id="showRecoveryBtn" type="button" class="btn btn-ghost" style="width:100%;">등록 정보를 잃어버리셨나요? 복구 요청</button>
+          </div>
+          <div id="recoveryRequestForm" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--line);">
+            <p class="hint">인사번호만 입력해 주시면, 관리자 승인 후 이 화면에서 바로 재등록하실 수 있습니다.</p>
+            <label for="recoveryEmpId">인사번호</label>
+            <input id="recoveryEmpId" type="text" placeholder="예: 2024001" autocomplete="off" inputmode="numeric">
+            <div class="btn-row" style="margin-top:8px;">
+              <button id="submitRecoveryBtn" type="button" class="btn btn-primary">복구 요청 보내기</button>
+            </div>
+            <p id="recoveryMsg" class="status" aria-live="polite"></p>
+          </div>
         </div>
-        <p id="registerMsg" class="status" aria-live="polite"></p>
-        <p class="hint" style="margin-top:8px;">※ 기기 등록 후 동일한 브라우저를 이용하여야 하며, 기기 재등록이 필요한 경우 교원인사팀으로 문의하여 주시기 바랍니다.</p>
+
+        <div id="recoveryStatusPanel" style="display:none;">
+          <p id="recoveryStatusMsg" class="hint"></p>
+          <div class="btn-row" id="recoveryReregisterRow" style="display:none;">
+            <button id="recoveryReregisterBtn" type="button" class="btn btn-primary" style="width:100%;">재등록</button>
+          </div>
+          <p id="recoveryReregisterMsg" class="status" aria-live="polite"></p>
+        </div>
       </div>
 
       <div id="checkinPanel" style="display:none;">
@@ -298,9 +321,17 @@
         <button id="adminMenuAttendanceBtn" type="button" class="btn btn-checkin" style="width:100%;">조교 출퇴근 현황 확인</button>
         <button id="adminMenuLeaveBtn" type="button" class="btn btn-checkout" style="width:100%;">조교 연차, 휴무 반영</button>
         <button id="adminMenuScheduleBtn" type="button" class="btn btn-primary" style="width:100%;">근무시간 설정</button>
+        <button id="adminMenuRecoveryBtn" type="button" class="btn btn-ghost" style="width:100%;">복구 요청 확인</button>
       </div>
       <div class="btn-row" style="margin-top:10px;">
         <button id="adminBackBtn2" type="button" class="btn btn-ghost">조교 화면으로</button>
+      </div>
+
+      <div id="adminRecoveryView" style="display:none; margin-top:18px;">
+        <h3>복구 요청 확인</h3>
+        <p class="hint">등록 정보를 잃어버려 복구를 요청한 조교 목록입니다. 실제로 본인이 요청한 게 맞는지 확인 후 승인해 주세요.</p>
+        <p id="adminRecoveryMsg" class="status" aria-live="polite"></p>
+        <div id="adminRecoveryList" style="margin-top:10px;"></div>
       </div>
 
       <div id="adminAttendanceView" style="display:none; margin-top:18px;">
@@ -866,6 +897,7 @@
     }else{
       registerPanel.style.display = 'block';
       checkinPanel.style.display = 'none';
+      checkRecoveryStatusAndRender(); // 대기/승인 중인 복구 요청이 있으면 그 상태를 보여줌
     }
   }
 
@@ -901,6 +933,121 @@
 
       saveStoredIdentity({ empId, secretHex, name: res.name, role: res.role });
       registerMsg.textContent = '';
+      refreshIdentityUI();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- 등록 정보 복구 요청 ----------
+  const RECOVERY_KEY = 'jokyo_recovery_pending_empid';
+
+  function getPendingRecoveryEmpId(){
+    try{ return localStorage.getItem(RECOVERY_KEY); }catch(e){ return null; }
+  }
+  function setPendingRecoveryEmpId(empId){
+    try{ localStorage.setItem(RECOVERY_KEY, empId); }catch(e){}
+  }
+  function clearPendingRecoveryEmpId(){
+    try{ localStorage.removeItem(RECOVERY_KEY); }catch(e){}
+  }
+
+  $('showRecoveryBtn').addEventListener('click', () => {
+    const form = $('recoveryRequestForm');
+    form.style.display = (form.style.display === 'none') ? 'block' : 'none';
+  });
+
+  $('submitRecoveryBtn').addEventListener('click', async () => {
+    const empId = $('recoveryEmpId').value.trim();
+    const msg = $('recoveryMsg');
+    if(!empId){
+      msg.textContent = '인사번호를 입력해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
+    msg.textContent = '요청을 보내는 중…';
+    msg.className = 'status';
+    try{
+      const res = await callAppsScript({ action: 'requestRecovery', empId });
+      if(!res.ok){
+        msg.textContent = res.error || '요청에 실패했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      setPendingRecoveryEmpId(empId);
+      msg.textContent = '';
+      checkRecoveryStatusAndRender();
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  });
+
+  // 이 기기에 대기/승인 중인 복구 요청이 있으면, 등록 화면을 그 상태로 바꿔 보여줍니다.
+  async function checkRecoveryStatusAndRender(){
+    const empId = getPendingRecoveryEmpId();
+    if(!empId) return; // 이 기기에서 보낸 복구 요청이 없으면 평소 등록 화면 그대로
+
+    const statusMsg = $('recoveryStatusMsg');
+    const reregRow = $('recoveryReregisterRow');
+
+    try{
+      const res = await callAppsScript({ action: 'checkRecoveryStatus', empId });
+      if(!res.ok || !res.status){
+        clearPendingRecoveryEmpId(); // 요청을 못 찾음(관리자가 이미 처리했거나 오래된 기록) -> 정리
+        return;
+      }
+      if(res.status === '완료'){
+        clearPendingRecoveryEmpId(); // 이미 재등록까지 끝난 상태 -> 정리하고 평소 화면으로
+        return;
+      }
+
+      $('normalRegisterForm').style.display = 'none';
+      $('recoveryStatusPanel').style.display = 'block';
+
+      if(res.status === '승인'){
+        statusMsg.textContent = '복구 요청이 승인되었습니다. 아래 버튼을 눌러 재등록해 주세요.';
+        reregRow.style.display = 'block';
+      }else{
+        statusMsg.textContent = '복구 요청이 접수되었습니다. 관리자 승인을 기다리는 중입니다. (인사번호: ' + empId + ')';
+        reregRow.style.display = 'none';
+      }
+    }catch(e){
+      console.error('복구 상태 확인 오류:', e);
+    }
+  }
+
+  $('recoveryReregisterBtn').addEventListener('click', async () => {
+    const empId = getPendingRecoveryEmpId();
+    const msg = $('recoveryReregisterMsg');
+    if(!empId){
+      msg.textContent = '요청 정보를 찾을 수 없습니다. 처음부터 다시 시도해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
+    if(!hasWebCrypto()){
+      msg.textContent = '이 브라우저는 보안키 생성 기능(Web Crypto)을 지원하지 않습니다.';
+      msg.className = 'status err';
+      return;
+    }
+
+    const btn = $('recoveryReregisterBtn');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    msg.textContent = '재등록하는 중…';
+    msg.className = 'status';
+
+    try{
+      const secretHex = randomSecretHex();
+      const res = await callAppsScript({ action: 'completeRecoveryRegister', empId, secretHex, device: navigator.userAgent || '' });
+      if(!res.ok){
+        msg.textContent = res.error || '재등록에 실패했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      saveStoredIdentity({ empId, secretHex, name: res.name, role: res.role });
+      clearPendingRecoveryEmpId();
+      msg.textContent = '';
       refreshIdentityUI();
     } finally {
       btn.disabled = false;
@@ -1039,6 +1186,7 @@
     $('adminAttendanceView').style.display = 'none';
     $('adminLeaveView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
+    $('adminRecoveryView').style.display = 'none';
   }
 
   $('adminMenuOpenBtn').addEventListener('click', async () => {
@@ -1110,19 +1258,29 @@
     $('adminAttendanceView').style.display = 'block';
     $('adminLeaveView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
+    $('adminRecoveryView').style.display = 'none';
     loadAdminAttendance();
   });
   $('adminMenuLeaveBtn').addEventListener('click', () => {
     $('adminLeaveView').style.display = 'block';
     $('adminAttendanceView').style.display = 'none';
     $('adminScheduleView').style.display = 'none';
+    $('adminRecoveryView').style.display = 'none';
     loadAdminAbsences();
   });
   $('adminMenuScheduleBtn').addEventListener('click', () => {
     $('adminScheduleView').style.display = 'block';
     $('adminAttendanceView').style.display = 'none';
     $('adminLeaveView').style.display = 'none';
+    $('adminRecoveryView').style.display = 'none';
     loadAdminSchedule();
+  });
+  $('adminMenuRecoveryBtn').addEventListener('click', () => {
+    $('adminRecoveryView').style.display = 'block';
+    $('adminAttendanceView').style.display = 'none';
+    $('adminLeaveView').style.display = 'none';
+    $('adminScheduleView').style.display = 'none';
+    loadAdminRecoveryRequests();
   });
   $('adminAttPerson').addEventListener('change', loadAdminAttendance);
   $('adminAttMonth').addEventListener('change', loadAdminAttendance);
@@ -1359,6 +1517,65 @@
       msg.className = 'status err';
     }
   });
+
+  async function loadAdminRecoveryRequests(){
+    const msg = $('adminRecoveryMsg');
+    const wrap = $('adminRecoveryList');
+    msg.textContent = '불러오는 중…';
+    msg.className = 'status';
+    wrap.innerHTML = '';
+    try{
+      const res = await adminCall('adminListRecoveryRequests');
+      if(!res.ok){
+        msg.textContent = res.error || '불러오지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '';
+      renderAdminRecoveryRequests(res.requests || []);
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
+
+  function renderAdminRecoveryRequests(requests){
+    const wrap = $('adminRecoveryList');
+    if(requests.length === 0){
+      wrap.innerHTML = '<p class="hint">대기 중인 복구 요청이 없습니다.</p>';
+      return;
+    }
+    wrap.innerHTML = requests.map(r =>
+      '<div class="absence-row" style="flex-wrap:wrap; gap:6px;">' +
+        '<span>' + escapeHtml(r.name) + ' (' + escapeHtml(r.empId) + ') · ' + escapeHtml(r.requestedAt) + '</span>' +
+        '<button type="button" class="btn btn-ghost admin-approve-btn" data-empid="' + escapeHtml(r.empId) + '">승인</button>' +
+      '</div>'
+    ).join('');
+
+    wrap.querySelectorAll('.admin-approve-btn').forEach(btn => {
+      btn.addEventListener('click', () => approveRecoveryRequest(btn.dataset.empid));
+    });
+  }
+
+  async function approveRecoveryRequest(empId){
+    const msg = $('adminRecoveryMsg');
+    msg.textContent = '승인하는 중…';
+    msg.className = 'status';
+    try{
+      const res = await adminCall('adminApproveRecovery', { empId });
+      if(!res.ok){
+        msg.textContent = res.error || '승인하지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '승인되었습니다.';
+      msg.className = 'status ok';
+      loadAdminRecoveryRequests(); // 목록 갱신 (승인된 요청은 사라짐)
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
 
   // ---------- init ----------
   (async function init(){
