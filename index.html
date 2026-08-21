@@ -285,15 +285,27 @@
     <h3>내 체크인 기록</h3>
     <p class="hint">항상 서버(구글 시트)에서 최신 기록을 가져와 보여드립니다. 출근·퇴근할 때마다, 그리고 이 화면을 열 때마다 자동으로 새로고침됩니다.</p>
 
-    <label for="localHistoryMonth">조회할 월</label>
-    <select id="localHistoryMonth"></select>
+    <div class="btn-row" style="margin-top:6px; align-items:center;">
+      <button id="prevWeekBtn" type="button" class="btn btn-ghost" style="flex:none; min-width:0; padding:8px 12px;">◀</button>
+      <span id="weekRangeLabel" style="flex:1; text-align:center; font-weight:600; font-size:0.88rem;"></span>
+      <button id="nextWeekBtn" type="button" class="btn btn-ghost" style="flex:none; min-width:0; padding:8px 12px;">▶</button>
+    </div>
+
     <div class="btn-row" style="margin-top:8px;">
       <button id="syncHistoryBtn" type="button" class="btn btn-ghost">동기화(불러오기)</button>
+      <button id="myMonthlyCalBtn" type="button" class="btn btn-ghost">월 체크인 현황</button>
     </div>
     <p id="historyMsg" class="status" aria-live="polite"></p>
 
     <div class="building-list" id="localHistoryList" style="margin-top:10px;"></div>
     <p id="localHistoryEmpty" class="hint" style="margin-top:8px;"></p>
+
+    <div id="myMonthlyCalView" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--line);">
+      <label for="myMonthlyCalMonth">조회할 월</label>
+      <select id="myMonthlyCalMonth"></select>
+      <p id="myMonthlyCalMsg" class="status" aria-live="polite"></p>
+      <div id="myMonthlyCalWrap" style="margin-top:10px; overflow-x:auto;"></div>
+    </div>
   </section>
 
   <p class="foot-note">
@@ -635,16 +647,29 @@
       timeZone:'Asia/Seoul', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true
     });
   }
-  function populateMonthSelect(){
-    const sel = $('localHistoryMonth');
-    const current = monthKey();
-    const m1 = shiftMonth(current, -1);
-    const m2 = shiftMonth(current, -2);
-    sel.innerHTML =
-      '<option value="' + current + '">' + monthLabel(current) + ' (이번 달)</option>' +
-      '<option value="' + m1 + '">' + monthLabel(m1) + ' (지난달)</option>' +
-      '<option value="' + m2 + '">' + monthLabel(m2) + '</option>';
-    sel.value = current;
+  function dateToYmd(d){
+    return new Intl.DateTimeFormat('en-CA', { year:'numeric', month:'2-digit', day:'2-digit' }).format(d);
+  }
+  function getMondayOf(date){
+    const d = new Date(date);
+    const day = d.getDay(); // 0=일,1=월,...6=토
+    const diff = (day === 0 ? -6 : 1 - day); // 그 주의 월요일까지 이동할 일수
+    d.setDate(d.getDate() + diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  function formatWeekLabel(monday){
+    const friday = new Date(monday);
+    friday.setDate(friday.getDate() + 4);
+    const fmt = (d) => (d.getMonth() + 1) + '/' + d.getDate();
+    return fmt(monday) + '(월) ~ ' + fmt(friday) + '(금)';
+  }
+
+  // 이 주(월요일 자정 기준)를 계속 들고 있다가, 이전/다음 주 버튼으로 옮겨 다닙니다.
+  let currentWeekMonday = getMondayOf(new Date());
+
+  function updateWeekLabel(){
+    $('weekRangeLabel').textContent = formatWeekLabel(currentWeekMonday);
   }
 
   // 서버에서 받아온 최근 기록(최대 약 3개월치)을 세션 동안만 메모리에 들고 있습니다.
@@ -654,12 +679,18 @@
   function renderCheckinHistory(){
     const wrap = $('localHistoryList');
     const empty = $('localHistoryEmpty');
-    const monthStr = $('localHistoryMonth').value || monthKey();
-    const list = historyRecords.filter(r => r.date && r.date.indexOf(monthStr) === 0);
+
+    const friday = new Date(currentWeekMonday);
+    friday.setDate(friday.getDate() + 4);
+    const startStr = dateToYmd(currentWeekMonday);
+    const endStr = dateToYmd(friday);
+
+    // 월~금 범위로만 필터링하므로, 주말 기록은 자연스럽게 제외됩니다.
+    const list = historyRecords.filter(r => r.date && r.date >= startStr && r.date <= endStr);
 
     if(list.length === 0){
       wrap.innerHTML = '';
-      empty.textContent = monthLabel(monthStr) + '에 체크인한 기록이 없습니다.';
+      empty.textContent = formatWeekLabel(currentWeekMonday) + ' 기간에 체크인한 기록이 없습니다.';
       empty.hidden = false;
       return;
     }
@@ -1153,7 +1184,16 @@
 
   $('checkinBtn').addEventListener('click', () => record('출근'));
   $('checkoutBtn').addEventListener('click', () => record('퇴근'));
-  $('localHistoryMonth').addEventListener('change', () => renderCheckinHistory()); // 이미 받아온 데이터를 다시 필터링만 함(서버 재호출 없음)
+  $('prevWeekBtn').addEventListener('click', () => {
+    currentWeekMonday.setDate(currentWeekMonday.getDate() - 7);
+    updateWeekLabel();
+    renderCheckinHistory();
+  });
+  $('nextWeekBtn').addEventListener('click', () => {
+    currentWeekMonday.setDate(currentWeekMonday.getDate() + 7);
+    updateWeekLabel();
+    renderCheckinHistory();
+  });
 
   $('syncHistoryBtn').addEventListener('click', async () => {
     const identity = getStoredIdentity();
@@ -1171,6 +1211,106 @@
       btn.disabled = false;
     }
   });
+
+  $('myMonthlyCalBtn').addEventListener('click', () => {
+    const view = $('myMonthlyCalView');
+    const showing = view.style.display !== 'none';
+    view.style.display = showing ? 'none' : 'block';
+    if(!showing){
+      populateMyMonthlyCalMonths();
+      loadMyMonthlyCal();
+    }
+  });
+  $('myMonthlyCalMonth').addEventListener('change', loadMyMonthlyCal);
+
+  function populateMyMonthlyCalMonths(){
+    const current = monthKey();
+    const m1 = shiftMonth(current, -1);
+    const m2 = shiftMonth(current, -2);
+    $('myMonthlyCalMonth').innerHTML =
+      '<option value="' + current + '">' + monthLabel(current) + ' (이번 달)</option>' +
+      '<option value="' + m1 + '">' + monthLabel(m1) + ' (지난달)</option>' +
+      '<option value="' + m2 + '">' + monthLabel(m2) + '</option>';
+    $('myMonthlyCalMonth').value = current;
+  }
+
+  let currentMyCalDays = [];
+
+  async function loadMyMonthlyCal(){
+    const identity = getStoredIdentity();
+    if(!identity) return;
+    if(!hasWebCrypto()) return;
+    const month = $('myMonthlyCalMonth').value;
+    const msg = $('myMonthlyCalMsg');
+    const wrap = $('myMonthlyCalWrap');
+    msg.textContent = '불러오는 중…';
+    msg.className = 'status';
+    wrap.innerHTML = '';
+    try{
+      const otp = await generateOtp(identity.secretHex);
+      // empId는 본인 것 그대로만 사용하므로(다른 사람 지정 불가), 본인 현황만 조회됩니다.
+      const res = await callAppsScript({ action: 'myMonthlyDetail', empId: identity.empId, otp, month });
+      if(!res.ok){
+        msg.textContent = res.error || '불러오지 못했습니다.';
+        msg.className = 'status err';
+        return;
+      }
+      msg.textContent = '';
+      renderMyMonthlyCal(res, month);
+    }catch(e){
+      msg.textContent = '오류: ' + (e.message || e);
+      msg.className = 'status err';
+    }
+  }
+
+  function renderMyMonthlyCal(res, monthStr){
+    const wrap = $('myMonthlyCalWrap');
+    const [year, month] = monthStr.split('-').map(Number);
+    const firstDow = new Date(year, month - 1, 1).getDay();
+    const days = res.days || [];
+    currentMyCalDays = days;
+    const issueStatuses = ['지각', '조퇴', '지각조퇴', '퇴근누락', '결근'];
+
+    let html = '<table class="admin-cal"><thead><tr>';
+    ['일','월','화','수','목','금','토'].forEach((d,i) => {
+      html += '<th class="' + (i===0?'sun':i===6?'sat':'') + '">' + d + '</th>';
+    });
+    html += '</tr></thead><tbody><tr>';
+
+    for(let i=0;i<firstDow;i++) html += '<td></td>';
+
+    let col = firstDow;
+    days.forEach(d => {
+      if(col === 7){ html += '</tr><tr>'; col = 0; }
+      const dowClass = d.dow===0?'sun':d.dow===6?'sat':'';
+      if(d.status){
+        const colorClass = issueStatuses.includes(d.status) ? 'admin-cal-issue' : 'admin-cal-ok';
+        html += '<td class="' + colorClass + '" data-date="' + d.date + '"><div class="daynum ' + dowClass + '">' + d.day + '</div></td>';
+      } else {
+        html += '<td><div class="daynum ' + dowClass + '">' + d.day + '</div></td>';
+      }
+      col++;
+    });
+    while(col < 7){ html += '<td></td>'; col++; }
+    html += '</tr></tbody></table>';
+    html += '<div id="myCalDayDetail" class="hint" style="margin-top:10px; min-height:20px;"></div>';
+
+    wrap.innerHTML = html;
+
+    wrap.querySelectorAll('td[data-date]').forEach(td => {
+      td.addEventListener('click', () => showMyCalDayDetail(td.dataset.date));
+    });
+  }
+
+  function showMyCalDayDetail(dateStr){
+    const day = currentMyCalDays.find(d => d.date === dateStr);
+    const detail = $('myCalDayDetail');
+    if(!day || !day.status){ detail.innerHTML = ''; return; }
+    let text = '<b>' + dateStr + '</b> — ' + day.status;
+    if(day.checkin) text += ' · 출근 ' + formatTime(day.checkin);
+    if(day.checkout) text += ' · 퇴근 ' + formatTime(day.checkout);
+    detail.innerHTML = text;
+  }
 
   // ==================== 관리자 화면 ====================
   // 별도 관리자 암호 없이, 이 기기에 등록된 본인 신원(OTP)으로 서버에 "구분=관리자"인지 확인합니다.
@@ -1679,7 +1819,7 @@
       location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href);
     }
 
-    populateMonthSelect();
+    updateWeekLabel();
     renderCheckinHistory();
     refreshIdentityUI();
 
