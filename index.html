@@ -320,7 +320,17 @@
   <div id="adminScreen" style="display:none;">
     <section class="card" id="adminPasswordGate">
       <h2>관리자 메뉴</h2>
-      <p class="hint">이 기기에 등록된 본인 확인 정보로 관리자 권한을 확인합니다.</p>
+      <p id="adminAutoCheckMsg" class="hint" style="display:none;">이 기기에 등록된 본인 확인 정보로 관리자 권한을 확인합니다.</p>
+
+      <div id="adminPasswordForm" style="display:none;">
+        <p class="hint">컴퓨터에서는 관리자 암호로 로그인합니다.</p>
+        <label for="adminPasswordInput">관리자 암호</label>
+        <input id="adminPasswordInput" type="password" placeholder="암호 입력" autocomplete="off">
+        <div class="btn-row" style="margin-top:8px;">
+          <button id="adminPasswordLoginBtn" type="button" class="btn btn-primary">확인</button>
+        </div>
+      </div>
+
       <p id="adminLoginMsg" class="status" aria-live="polite"></p>
       <div class="btn-row" style="margin-top:8px;">
         <button id="adminBackBtn1" type="button" class="btn btn-ghost">조교 화면으로</button>
@@ -1315,12 +1325,18 @@
   // ==================== 관리자 화면 ====================
   // 별도 관리자 암호 없이, 이 기기에 등록된 본인 신원(OTP)으로 서버에 "구분=관리자"인지 확인합니다.
   let adminPeople = [];   // { empId, name, role }
+  let pcAdminPassword = null; // PC에서 암호로 인증한 경우에만 값이 채워짐 (세션 동안만 유지, 저장하지 않음)
 
   const taScreen = $('taScreen');
   const adminScreen = $('adminScreen');
 
-  // 관리자용 요청 공통 헬퍼: 이 기기에 등록된 신원으로 매번 새 OTP를 만들어 함께 보냅니다.
+  // 관리자용 요청 공통 헬퍼:
+  // - 컴퓨터(PC)에서는 암호(pcAdminPassword)로 인증합니다.
+  // - 폰에서는 이 기기에 등록된 신원으로 매번 새 OTP를 만들어 인증합니다.
   async function adminCall(action, extraParams){
+    if(pcAdminPassword){
+      return callAppsScript(Object.assign({ action, adminPassword: pcAdminPassword }, extraParams || {}));
+    }
     const identity = getStoredIdentity();
     if(!identity) return { ok:false, error:'먼저 이 기기에 기기 등록을 진행한 뒤 다시 시도해 주세요.' };
     if(!hasWebCrypto()) return { ok:false, error:'이 브라우저는 본인 확인 기능(Web Crypto)을 지원하지 않습니다.' };
@@ -1349,6 +1365,20 @@
     $('adminMenuPanel').style.display = 'none';
 
     const msg = $('adminLoginMsg');
+    msg.textContent = '';
+
+    if(!isMobileDevice()){
+      // 컴퓨터: 폰에 등록된 신원이 없으므로, 암호 입력 폼을 보여주고 "확인"을 누를 때까지 기다립니다.
+      $('adminAutoCheckMsg').style.display = 'none';
+      $('adminPasswordForm').style.display = 'block';
+      $('adminPasswordInput').value = '';
+      $('adminPasswordInput').focus();
+      return;
+    }
+
+    // 폰: 이 기기에 등록된 신원(OTP)으로 자동 확인합니다.
+    $('adminAutoCheckMsg').style.display = 'block';
+    $('adminPasswordForm').style.display = 'none';
     msg.textContent = '관리자 권한을 확인하는 중…';
     msg.className = 'status';
 
@@ -1373,6 +1403,32 @@
     showAdminMenu();
   });
 
+  $('adminPasswordLoginBtn').addEventListener('click', async () => {
+    const pw = $('adminPasswordInput').value.trim();
+    const msg = $('adminLoginMsg');
+    if(!pw){
+      msg.textContent = '암호를 입력해 주세요.';
+      msg.className = 'status err';
+      return;
+    }
+    msg.textContent = '확인 중…';
+    msg.className = 'status';
+
+    pcAdminPassword = pw; // adminCall이 이 암호로 인증하도록 임시로 세팅
+    const res = await adminCall('adminListPeople');
+    if(!res.ok){
+      pcAdminPassword = null; // 실패하면 초기화
+      msg.textContent = res.error || '암호가 올바르지 않습니다.';
+      msg.className = 'status err';
+      return;
+    }
+    adminPeople = res.people || [];
+    msg.textContent = '';
+    populateAdminPersonSelects();
+    populateAdminMonthSelects();
+    showAdminMenu();
+  });
+
   function clearStoredIdentityAndGoRegister(message){
     try{ localStorage.removeItem(IDENTITY_KEY); }catch(e){}
     showTaScreen();
@@ -1383,8 +1439,8 @@
     }
   }
 
-  $('adminBackBtn1').addEventListener('click', () => { showTaScreen(); });
-  $('adminBackBtn2').addEventListener('click', () => { showTaScreen(); });
+  $('adminBackBtn1').addEventListener('click', () => { pcAdminPassword = null; showTaScreen(); });
+  $('adminBackBtn2').addEventListener('click', () => { pcAdminPassword = null; showTaScreen(); });
 
   function populateAdminPersonSelects(){
     const optionsHtml = adminPeople.map(p =>
